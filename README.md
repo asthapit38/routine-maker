@@ -7,14 +7,17 @@ A super lightweight, single-file web app for building a department's **weekly du
 
 ## Workflow
 
-1. A senior (3rd-year) resident sends the week's roster as a `.docx`. **Upload** it.
-2. The uploaded week is **locked 🔒**. The cases, the senior's staff codes, the columns and the dates are read-only.
-3. Fill in the **1st-year residents**: click a cell and pick from the 1st-year list. Your people show as blue chips. **My planner** (below the grid) shows where each 1st year is every day, who is free, and who is on leave.
-4. If the senior sends a **revised file** for the same week, upload it and choose *update*. Their part is replaced, and your 1st-year assignments are kept. Anything that can't be placed (e.g. a removed column) is listed for you.
-5. **Next-day rule:** a 1st year who works in **OT 2** (neuro) or **OT 7** (GI) must be in **OT 5/LR** the next day. When you place someone in OT 2 or OT 7, the app offers to add them to OT 5/LR the next day. Missing ones are outlined in red and listed under *things to check*, and **Apply rule** in the planner fills them all in. You can change the columns in Settings.
-6. **Download → Word** to share the finished roster.
+The app has three steps, shown at the top.
 
-Which categories you can edit is set under **⋯ → Settings & locking** (default: *1st year residents*). The same place can unlock a week if an upload needs fixing. The lock prevents accidental edits on this device; it is not access control.
+1. **Upload**: drop the senior's roster (`.docx`) into the box. Earlier weeks are listed below it.
+2. **Plan 1st years**: one row per 1st-year resident, one column per day. Pick each person's station from the dropdown. Leave is shown in red, and the bottom row lists cases that still have no 1st year.
+   - **Next-day rule**: after **OT 2** (neuro) or **OT 7** (GI), the resident is put in **OT 5/LR** the next day if that day is still free (also across weeks, Sunday → Monday). If the day is taken, the cell is outlined red, and **Apply OT rule** fixes all of them.
+   - Press **Save & review**.
+3. **Review & download**: the whole table, with your 1st years in blue and the senior's schedule in grey. **Download Word (.docx)** gives back **the senior's original file**: only the 1st-year codes are added to the table, and everything else (header, leave box, staff list, signatures, formatting) is byte-for-byte unchanged.
+
+If the senior sends a **revised file** for the same week, upload it and choose *update*. Their part is replaced, and your 1st-year plan is kept.
+
+The senior's part is locked; you can only place 1st years. Everything else lives in the **⋯** menu: staff directory, settings (which categories you plan, the next-day rule, unlocking a week), the full table editor, other download formats, backup and restore.
 
 ## Features
 

@@ -45,6 +45,50 @@ textarea{width:100%;resize:vertical}
 .menu.open .menu-list{display:block}
 .menu-list button{display:block;width:100%;text-align:left;border:0;border-radius:4px}
 .menu-list button:hover{background:var(--chip)}
+.menu-list hr{border:0;border-top:1px solid var(--line2);margin:4px 0}
+.steps{display:flex;gap:4px;flex-wrap:wrap}
+.steps button{border:0;background:none;color:var(--muted);padding:6px 10px;border-radius:20px;font-weight:600}
+.steps button span{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--line2);color:var(--muted);font-size:12px;margin-right:4px}
+.steps button.on{background:#eef4ff;color:var(--accent)}
+.steps button.on span{background:var(--accent);color:#fff}
+.steps button:disabled{opacity:.45;cursor:default}
+.home{max-width:640px;margin:24px auto}
+.drop{display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;padding:48px 16px;border:2px dashed #b5c3dd;border-radius:16px;background:#fff;cursor:pointer;transition:.15s}
+.drop:hover,.drop.over{border-color:var(--accent);background:#f5f8ff}
+.drop .big{font-size:40px;line-height:1}
+.drop b{font-size:18px}
+.weeklist{list-style:none;padding:0;margin:8px 0 0;display:flex;flex-direction:column;gap:6px}
+.weeklist li{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+.weeklist li .t{flex:1;cursor:pointer}
+.weeklist li .t b{display:block}
+.phead{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;margin-bottom:12px}
+.phead h2{margin:0;font-size:18px}
+.phead .acts{display:flex;gap:8px;flex-wrap:wrap}
+.leaveline{font-size:13px;margin:0 0 10px;padding:6px 10px;background:#fff6f6;border:1px solid #f3d0d0;border-radius:8px;white-space:pre-wrap}
+.planwrap{overflow:auto;border:1px solid var(--line);border-radius:8px}
+table.plan{border-collapse:separate;border-spacing:0;width:100%;font-size:13px}
+.plan th,.plan td{border-right:1px solid var(--line2);border-bottom:1px solid var(--line2);padding:6px;text-align:center;vertical-align:top}
+.plan thead th{background:#f0f2f6;position:sticky;top:0;z-index:2;white-space:nowrap}
+.plan .who{position:sticky;left:0;background:#fff;text-align:left;white-space:nowrap;z-index:1}
+.plan thead .who{background:#f0f2f6;z-index:3}
+.plan select{width:100%;min-width:118px;padding:5px 4px;font-size:13px}
+.plan td.lv{background:var(--bad)}
+.plan td.need{box-shadow:inset 0 0 0 2px #e5484d}
+.plan td.set select{border-color:#1f6feb;background:#eef4ff;font-weight:600}
+.plan .tag{display:block;font-size:11px;font-weight:700;margin-bottom:3px}
+.plan .tag.lv{color:var(--bad-ink)} .plan .tag.need{color:var(--bad-ink)}
+.plan tfoot td{background:#fafbfc;font-size:12px;color:var(--muted)}
+.ro .grid td.cell{cursor:default}
+.ro .grid td.cell:hover{background:#fff}
+.steps i{font-style:normal}
+@media (max-width:820px){ .steps button{padding:6px 6px;font-size:13px} }
+@media (max-width:600px){
+  .bar h1,.steps i.long{display:none}
+  .plan .who .hint{display:none}
+  .plan select{min-width:96px}
+  main{padding:10px}
+  .sheet{padding:12px}
+}
 
 main{padding:16px;max-width:100%}
 .sheet{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;overflow:hidden}
@@ -171,27 +215,29 @@ dialog::backdrop{background:rgba(20,25,35,.35)}
 <body>
 <div class="bar">
   <h1>Duty Roster</h1>
-  <select id="weekSel" title="Choose week"></select>
-  <button id="btnNew" class="primary">+ New week</button>
-  <button id="btnStaff">Staff</button>
+  <nav class="steps" id="steps">
+    <button data-step="home"><span>1</span> Upload</button>
+    <button data-step="plan"><span>2</span> Plan<i class="long"> 1st years</i></button>
+    <button data-step="review"><span>3</span> <i class="long">Review &amp; </i>Download</button>
+  </nav>
   <span class="grow"></span>
   <span id="saved" class="saved"></span>
   <span id="offline" class="offline" hidden>Offline</span>
   <button id="btnInstall" hidden title="Install as an app on this device">Install app</button>
-  <button id="btnUpload">Upload</button>
-  <div class="menu" id="dlMenu">
-    <button id="btnDl">Download ▾</button>
-    <div class="menu-list">
-      <button data-dl="doc">Word document (.doc)</button>
-      <button data-dl="print">Print / Save as PDF</button>
-      <button data-dl="week">This week (.json)</button>
-      <button data-dl="all">Full backup: all weeks + staff (.json)</button>
-    </div>
-  </div>
   <div class="menu" id="moreMenu">
-    <button>⋯</button>
+    <button title="More">⋯</button>
     <div class="menu-list">
-      <button data-more="settings">Settings &amp; locking…</button>
+      <button id="btnStaff">Staff directory</button>
+      <button data-more="settings">Settings &amp; locking</button>
+      <button data-more="edit">Edit full table (advanced)</button>
+      <hr>
+      <button data-dl="docx">Download original .docx with 1st years</button>
+      <button data-dl="doc">Download as new Word layout (.doc)</button>
+      <button data-dl="print">Print / Save as PDF</button>
+      <button data-dl="all">Back up everything (.json)</button>
+      <button id="btnRestore">Restore a backup (.json)</button>
+      <hr>
+      <button id="btnNew">New blank week</button>
       <button data-more="dup">Duplicate this week</button>
       <button data-more="del" class="danger">Delete this week</button>
     </div>
@@ -267,6 +313,8 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 let state = load();
 let sel = null;          // {dayIdx, colId}
 let highlight = null;    // staff code being highlighted
+let view = 'home';       // 'home' | 'plan' | 'review' | 'edit'
+function go(v){ view = v; sel = null; render(); scrollTo(0, 0); }
 
 function blankState(){ return { staff: [], weeks: [], current: null }; }
 function load(){
@@ -430,10 +478,15 @@ function analyse(w){
 /* ================= render ================= */
 function render(){
   sortWeeks();
-  const ws = $('#weekSel');
-  ws.innerHTML = state.weeks.length ? state.weeks.map(w => `<option value="${w.id}" ${w.id===state.current?'selected':''}>${esc(weekLabel(w))}</option>`).join('') : '<option>No weeks yet</option>';
-  ws.disabled = !state.weeks.length;
   const w = week();
+  if (!w && view !== 'home') view = 'home';
+  document.querySelectorAll('#steps [data-step]').forEach(b => { b.classList.toggle('on', b.dataset.step === view || (view === 'edit' && b.dataset.step === 'review')); b.disabled = b.dataset.step !== 'home' && !w; });
+  if (view === 'home') return renderHome();
+  if (view === 'plan') return renderPlan(w);
+  if (view === 'review') return renderReview(w);
+  return renderEdit(w);
+}
+function renderEdit(w){
   const main = $('#main');
   if (!w){
     main.innerHTML = `<div class="sheet empty"><p style="font-size:16px;color:var(--ink)"><b>No routine yet.</b></p>
@@ -565,14 +618,13 @@ $('#main').addEventListener('input', e => {
   const w = week(); if (!w) return;
   const t = e.target;
   if (t.readOnly) return;
-  if (t.dataset.f){ w[t.dataset.f] = t.value; save(); if (t.dataset.f === 'leave') softRefresh(); if (t.dataset.f === 'range') refreshWeekSel(); }
+  if (t.dataset.f){ w[t.dataset.f] = t.value; save(); if (t.dataset.f === 'leave') softRefresh(); }
   else if (t.dataset.col){ const c = w.columns.find(c => c.id === t.dataset.col); if (c){ c.name = t.value; save(); } }
   else if (t.dataset.dd !== undefined){ w.days[t.dataset.dd].date = t.value; save(); }
   else if (t.dataset.dw !== undefined){ w.days[t.dataset.dw].day = t.value.toUpperCase(); save(); }
 });
 $('#main').addEventListener('change', e => { if (e.target.dataset.dd !== undefined || e.target.dataset.dw !== undefined || e.target.dataset.f === 'leave') render(); });
 let softT; function softRefresh(){ clearTimeout(softT); softT = setTimeout(() => { const a = document.activeElement, id = a && a.id, pos = a && a.selectionStart; render(); if (id){ const el = document.getElementById(id); el.focus(); try{ el.setSelectionRange(pos,pos);}catch(e){} } }, 500); }
-function refreshWeekSel(){ const w = week(); const o = $(`#weekSel option[value="${w.id}"]`); if (o) o.textContent = weekLabel(w); }
 
 $('#main').addEventListener('click', e => {
   const w = week(); if (!w) return;
@@ -753,11 +805,11 @@ $('#dlgNew').addEventListener('close', () => {
     cells: copyA ? JSON.parse(JSON.stringify(src.cells)) : {}
   } : {});
   w.days = days; w.range = start ? `${fmt(start)}-${fmt(end)}` : '';
-  state.weeks.push(w); state.current = w.id; sel = null; save(); render();
+  state.weeks.push(w); state.current = w.id; save(); go('plan');
 });
 
 /* ================= week select / more ================= */
-$('#weekSel').onchange = e => { state.current = e.target.value; sel = null; highlight = null; save(); render(); };
+$('#steps').onclick = e => { const b = e.target.closest('[data-step]'); if (b && !b.disabled) go(b.dataset.step); };
 document.querySelectorAll('.menu > button').forEach(b => b.onclick = e => {
   const m = b.parentElement; const open = m.classList.contains('open');
   document.querySelectorAll('.menu').forEach(x => x.classList.remove('open'));
@@ -767,9 +819,10 @@ document.addEventListener('click', () => document.querySelectorAll('.menu').forE
 document.querySelectorAll('[data-more]').forEach(b => b.onclick = () => {
   const w = week(); if (!w) return;
   if (b.dataset.more === 'settings') return openSettings();
-  if (b.dataset.more === 'dup'){ const c = JSON.parse(JSON.stringify(w)); c.id = uid(); c.created = Date.now(); c.range = (c.range || '') + ' (copy)'; state.weeks.push(c); state.current = c.id; }
+  if (b.dataset.more === 'edit') return go('edit');
+  if (b.dataset.more === 'dup'){ const c = JSON.parse(JSON.stringify(w)); c.id = uid(); idb.get(w.id).then(f => f && idb.put(c.id, f)).catch(() => {}); c.created = Date.now(); c.range = (c.range || '') + ' (copy)'; state.weeks.push(c); state.current = c.id; }
   if (b.dataset.more === 'del'){ if (!confirm(`Delete the week "${weekLabel(w)}"? This cannot be undone (download a backup first if unsure).`)) return;
-    state.weeks = state.weeks.filter(x => x !== w); sortWeeks(); state.current = state.weeks[0] ? state.weeks[0].id : null; }
+    state.weeks = state.weeks.filter(x => x !== w); idb.del(w.id).catch(() => {}); sortWeeks(); state.current = state.weeks[0] ? state.weeks[0].id : null; view = 'home'; }
   sel = null; save(); render();
 });
 
@@ -834,14 +887,19 @@ function download(name, data, type){
 const fileBase = w => ('roster ' + (w.range || 'week')).replace(/[\/\\:*?"<>|]+/g, '-').replace(/\s+/g, '_');
 document.querySelectorAll('[data-dl]').forEach(b => b.onclick = () => {
   const w = week(); const k = b.dataset.dl;
-  if (k === 'all') return download(`roster-backup-${new Date().toISOString().slice(0,10)}.json`, JSON.stringify({ app: 'routine-maker', version: 1, ...state }, null, 1), 'application/json');
+  if (k === 'all') return (async () => {
+    const files = {};
+    for (const x of state.weeks){ try { const f = await idb.get(x.id); if (f) files[x.id] = { name: f.name, b64: bufToB64(f.buf) }; } catch(e){} }
+    download(`roster-backup-${new Date().toISOString().slice(0,10)}.json`, JSON.stringify({ app: 'routine-maker', version: 2, ...state, files }), 'application/json');
+  })();
   if (!w) return alert('No week selected.');
   if (k === 'week'){
     const used = new Set(Object.values(w.cells).flatMap(c => c.staff || []));
     return download(fileBase(w) + '.json', JSON.stringify({ app: 'routine-maker', version: 1, week: w, staff: state.staff.filter(s => used.has(s.code) || true) }, null, 1), 'application/json');
   }
   if (k === 'doc') return download(fileBase(w) + '.doc', wordHtml(w), 'application/msword');
-  if (k === 'print'){ sel = null; highlight = null; render(); setTimeout(() => window.print(), 50); }
+  if (k === 'docx') return downloadDocx(w);
+  if (k === 'print'){ if (view === 'home' || view === 'plan') view = 'review'; sel = null; highlight = null; render(); setTimeout(() => window.print(), 50); }
 });
 
 function wordHtml(w){
@@ -891,14 +949,18 @@ ${w.footer ? `<p style="margin-top:12pt;text-align:right">${nl(w.footer)}</p>` :
 }
 
 /* ================= upload ================= */
-$('#btnUpload').onclick = () => $('#fileIn').click();
-$('#fileIn').onchange = async e => {
-  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+$('#btnRestore').onclick = () => $('#fileIn').click();
+$('#fileIn').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) handleFile(f); };
+async function handleFile(f){
   try {
-    if (/\.docx$/i.test(f.name)){ const d = await parseDocx(await f.arrayBuffer()); d.week.locked = true; importWeek(d, f.name); }
-    else importJson(JSON.parse(await f.text()));
+    if (/\.docx$/i.test(f.name)){
+      const buf = await f.arrayBuffer();
+      const d = await parseDocx(buf); d.week.locked = true;
+      await importWeek(d, f.name, buf); go('plan');
+    } else if (/\.json$/i.test(f.name) || f.type.includes('json')) { await importJson(JSON.parse(await f.text())); }
+    else alert('Please choose the roster Word file (.docx).');
   } catch(err){ console.error(err); alert('Could not read that file: ' + err.message); }
-};
+}
 function mergeStaff(list){
   let added = 0; const m = staffMap();
   (list || []).forEach(s => { if (!s.code) return; const ex = m.get(s.code);
@@ -906,7 +968,7 @@ function mergeStaff(list){
     else { if (!ex.name && s.name) ex.name = s.name; if (!ex.category && s.category) ex.category = s.category; } });
   return added;
 }
-function importWeek(data, src){
+async function importWeek(data, src, buf){
   const w = newWeekObj(data.week); w.id = uid(); w.created = Date.now(); w.locked = !!(data.week && data.week.locked);
   const added = mergeStaff(data.staff);
   const clash = state.weeks.find(x => x.range && x.range === w.range);
@@ -920,6 +982,7 @@ function importWeek(data, src){
       if (lost.length) alert(`Updated. These of your assignments could not be placed because the column or day no longer exists:\n\n${lost.join('\n')}`);
     }
   }
+  if (buf){ w.fileName = src; try { await idb.put(w.id, { name: src, buf }); w.hasFile = true; } catch(e){ console.warn(e); w.hasFile = false; } }
   state.weeks.push(w); state.current = w.id; sel = null; save(); render();
   flash(msg);
 }
@@ -946,14 +1009,16 @@ function carryMine(oldW, newW){
   if (extra.length) newW.leave = [newW.leave, ...extra].filter(Boolean).join('\n');
   return lost;
 }
-function importJson(j){
+async function importJson(j){
   if (j.week) return importWeek(j, 'week');
+  // original .docx files travel inside full backups as base64
+  if (j.files) for (const [id, f] of Object.entries(j.files)) { try { await idb.put(id, { name: f.name, buf: b64ToBuf(f.b64) }); } catch(e){} }
   if (Array.isArray(j.weeks)){
     const replace = state.weeks.length && confirm('Restore this backup?\n\nOK = replace ALL current data with the backup.\nCancel = merge the backup into current data.');
     if (replace || !state.weeks.length){ state = { staff: j.staff || [], weeks: j.weeks, current: j.current || (j.weeks[0] && j.weeks[0].id) }; }
     else { const ids = new Set(state.weeks.map(w => w.id)); j.weeks.forEach(w => { if (ids.has(w.id)) w.id = uid(); state.weeks.push(w); }); mergeStaff(j.staff); }
     if (!state.weeks.some(w => w.id === state.current)) state.current = state.weeks[0] ? state.weeks[0].id : null;
-    save(); render(); return;
+    save(); go('home'); flash('Backup restored'); return;
   }
   throw new Error('Not a roster file.');
 }
@@ -1049,7 +1114,7 @@ async function parseDocx(buf){
   // roster grid
   const grid = tableRows(tables[0]);
   const header = grid[0].map(c => c.map(p => p.text).join(' ').replace(/\s+/g, ' ').trim());
-  const columns = header.slice(1).map(n => ({ id: uid(), name: n }));
+  const columns = header.slice(1).map((n, i) => ({ id: uid(), name: n, src: i + 1 }));   // src = cell index in the Word row
   const days = [], cells = {};
   const splitGlued = tok => { // "CJBB" -> ["CJ","BB"] when both are known codes
     for (let i = 1; i < tok.length; i++){ const a = tok.slice(0, i), b = tok.slice(i);
@@ -1057,12 +1122,12 @@ async function parseDocx(buf){
     return null;
   };
   const labelCounts = columns.map(() => new Map());
-  grid.slice(1).forEach(row => {
+  grid.slice(1).forEach((row, ri) => {
     const dayTxt = row[0].map(p => p.text).join(' ');
     const num = (dayTxt.match(/\d+/) || [''])[0];
     const dn = (dayTxt.toUpperCase().match(/SUN|MON|TUE|WED|THU|FRI|SAT/) || [''])[0];
     if (!num && !dn) return;
-    const d = days.length; days.push({ date: num, day: dn });
+    const d = days.length; days.push({ date: num, day: dn, row: ri + 1 });   // row = row index in the Word table
     row.slice(1).forEach((paras, ci) => {
       if (!columns[ci]) return;
       let label = [], staffL = [], extra = [];
@@ -1096,6 +1161,270 @@ async function parseDocx(buf){
   columns.forEach((c, i) => { if (!c.name){ const best = [...labelCounts[i]].sort((a, b) => b[1] - a[1])[0]; c.name = best ? best[0] : 'Col ' + (i + 1); } });
   // drop fully empty trailing columns with no header? keep: they may be used later.
   return { week: { dept, inst, title, range, conf, leave: leave.join('\n'), notes: notes.join('\n'), footer: footer.join('\n'), columns, days, cells }, staff };
+}
+
+/* ================= simple flow: 1 upload → 2 plan → 3 review & download ================= */
+function mineCount(w){ const m = staffMap(); return Object.values(w.cells).reduce((n, c) => n + (c.staff || []).filter(x => isMine(x, m)).length, 0); }
+function renderHome(){
+  const list = state.weeks.map(w => `<li><span class="t" data-open="${w.id}"><b>${esc(w.range || 'Untitled week')}</b><span class="hint">${esc(w.fileName || 'created in the app')} · ${mineCount(w)} 1st-year duties</span></span>
+    <button data-open="${w.id}">Open</button></li>`).join('');
+  $('#main').innerHTML = `<div class="home">
+    <label class="drop" id="drop"><span class="big">📄</span><b>Upload the senior's roster</b><span class="hint">Drop the Word file (.docx) here, or tap to choose it</span>
+      <input type="file" id="dropIn" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden></label>
+    ${list ? `<h3 style="margin:24px 0 4px">Previous weeks</h3><ul class="weeklist">${list}</ul>` : ''}
+  </div>`;
+  const drop = $('#drop');
+  $('#dropIn').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) handleFile(f); };
+  ['dragenter', 'dragover'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) handleFile(f); });
+}
+$('#main').addEventListener('click', e => {
+  const o = e.target.closest('[data-open]'); if (o){ state.current = o.dataset.open; save(); go('plan'); }
+});
+
+/* step 2: person × day; each cell picks the station for that day */
+function renderPlan(w){
+  const A = analyse(w), m = A.known;
+  const mine = state.staff.filter(s => myCats().has(lc(s.category)));
+  const R = A.rule, tgt = R.targets[0];
+  const where = w.days.map(() => new Map());   // day -> code -> [colId]
+  for (const [k, v] of Object.entries(w.cells)){ const [d, c] = k.split('|'); if (!w.days[d]) continue;
+    (v.staff || []).forEach(code => { const x = where[d]; x.set(code, [...(x.get(code) || []), c]); }); }
+  const optsFor = (d, self) => w.columns.map(c => {
+    const v = w.cells[cellKey(d, c.id)] || {}; const others = (v.staff || []).filter(x => x !== self && isMine(x, m));
+    return { id: c.id, text: c.name + (v.label ? ' · ' + v.label : '') + (others.length ? '  (' + others.join(', ') + ')' : '') };
+  });
+  const open = w.days.map((day, d) => w.columns.filter(c => { const v = w.cells[cellKey(d, c.id)]; return v && v.label && !/^x+$/i.test(v.label) && !(v.staff || []).some(x => isMine(x, m)); }).map(c => c.name));
+  const rows = mine.map(s => `<tr><td class="who"><b>${esc(s.code)}</b> <span class="hint">${esc(s.name)}</span></td>${w.days.map((day, d) => {
+      const at = (where[d].get(s.code) || []), cur = at[0] || '', lv = A.onLeave(s.code, d);
+      const why = R.due[d].get(s.code), need = why && !R.targets.some(t => at.includes(t.id));
+      const extra = at.slice(1).map(id => (w.columns.find(c => c.id === id) || {}).name).filter(Boolean);
+      return `<td class="${lv ? 'lv' : ''} ${need ? 'need' : ''} ${cur ? 'set' : ''}" ${why ? `title="Did ${esc(why)}"` : ''}>${lv ? '<span class="tag lv">LEAVE</span>' : ''}${need ? `<span class="tag need">needs ${esc(tgt.name)}</span>` : ''}
+        <select data-p="${esc(s.code)}" data-d="${d}"><option value="">—</option>${optsFor(d, s.code).map(o => `<option value="${o.id}" ${o.id === cur ? 'selected' : ''}>${esc(o.text)}</option>`).join('')}</select>
+        ${extra.length ? `<span class="hint">+ ${esc(extra.join(', '))}</span>` : ''}</td>`; }).join('')}
+      <td><b>${w.days.reduce((n, _, d) => n + (where[d].get(s.code) || []).length, 0)}</b></td></tr>`).join('');
+  const nm = R.misses.length;
+  $('#main').innerHTML = `<div class="sheet">
+    <div class="phead"><div><h2>Plan 1st-year residents</h2><div class="hint">${esc(w.range)}${locked(w) ? " · senior's schedule is locked 🔒" : ''}</div></div>
+      <div class="acts">${nm ? `<button id="applyRule">Apply OT rule (${nm})</button>` : ''}<button class="primary" id="savePlan">Save &amp; review →</button></div></div>
+    ${w.leave ? `<div class="leaveline"><b>Leave:</b> ${esc(w.leave)}</div>` : ''}
+    ${mine.length ? `<div class="planwrap"><table class="plan"><thead><tr><th class="who">Resident</th>${w.days.map(d => `<th>${esc(d.day)} ${esc(d.date)}</th>`).join('')}<th>Total</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr><td class="who" style="background:#fafbfc">Cases with no 1st year</td>${open.map(o => `<td title="${esc(o.join(', '))}">${o.length ? esc(o.join(', ')) : '✓'}</td>`).join('')}<td></td></tr></tfoot></table></div>`
+      : `<p>No 1st-year residents found. Open <b>⋯ → Settings &amp; locking</b> and tick the category you schedule.</p>`}
+    <p class="hint" style="margin-top:10px">Pick where each resident works each day. ${tgt && ruleFrom(w).length ? `Rule: after ${esc(ruleFrom(w).map(c => c.name).join(' / '))} → next day ${esc(tgt.name)} (filled in for you when that day is free).` : ''} Saved automatically.</p>
+  </div>`;
+}
+function setMine(w, code, d, colId){
+  for (const [k, v] of Object.entries(w.cells)){
+    const [dd] = k.split('|'); if (+dd !== d) continue;
+    v.staff = (v.staff || []).filter(x => x !== code);
+    if (!v.label && !v.staff.length && !v.note) delete w.cells[k];
+  }
+  if (colId){ const k = cellKey(d, colId); const c = w.cells[k] || (w.cells[k] = { label: '', staff: [], note: '' }); c.staff.push(code); }
+}
+$('#main').addEventListener('change', e => {
+  const t = e.target; if (!t.matches('select[data-p]')) return;
+  const w = week(), code = t.dataset.p, d = +t.dataset.d;
+  setMine(w, code, d, t.value || null);
+  // next-day rule: if they are now due in OT 5/LR tomorrow and tomorrow is still free, fill it in
+  const miss = ruleCheck(w).misses.find(x => x.code === code && x.from === d);
+  if (miss){
+    const busyNext = Object.entries(w.cells).some(([k, v]) => +k.split('|')[0] === miss.to && (v.staff || []).includes(code));
+    if (!busyNext){ applyRule(w, [miss]); flash(`${code} → ${ruleTargets(w)[0].name} on ${w.days[miss.to].day} (rule)`); }
+  }
+  save(); const y = scrollY, x = ($('.planwrap') || {}).scrollLeft; render(); scrollTo(0, y); if ($('.planwrap')) $('.planwrap').scrollLeft = x;
+});
+$('#main').addEventListener('click', e => { if (e.target.id === 'savePlan'){ save(); go('review'); } });
+
+/* step 3: whole table, read-only, then download */
+function renderReview(w){
+  const A = analyse(w);
+  let g = `<div class="gridwrap"><table class="grid"><thead><tr><th class="day">DAY /<br>DATE</th>${w.columns.map(c => `<th><div style="padding:8px 4px">${esc(c.name)}</div></th>`).join('')}</tr></thead><tbody>`;
+  w.days.forEach((day, d) => {
+    g += `<tr class="${day.day === 'SAT' || day.day === 'SUN' ? 'wkend' : ''}"><th class="day"><div style="font-size:18px;font-weight:700">${esc(day.date)}</div>${esc(day.day)}</th>`;
+    w.columns.forEach(c => {
+      const v = w.cells[cellKey(d, c.id)];
+      g += '<td class="cell">';
+      if (v){
+        if (v.label) g += `<div class="lbl ${/^x+$/i.test(v.label) ? 'off' : ''}">${esc(v.label)}</div>`;
+        if ((v.staff || []).length) g += '<div class="chips">' + v.staff.map(code => {
+          const cls = ['chip'], mn = isMine(code, A.known); if (mn) cls.push('mine');
+          if (mn && A.onLeave(code, d)) cls.push('leave'); else if (mn && (A.perDay[d].get(code) || 0) > 1) cls.push('dup');
+          if (A.missKey.has(`${d}|${c.id}|${code}`)) cls.push('rulemiss');
+          return `<span class="${cls.join(' ')}">${esc(code)}</span>`; }).join('') + '</div>';
+        if (v.note) g += `<div class="note">${esc(v.note)}</div>`;
+      }
+      g += '</td>';
+    });
+    g += '</tr>';
+  });
+  g += '</tbody></table></div>';
+  const mineCodes = new Set(state.staff.filter(x => myCats().has(lc(x.category))).map(x => x.code));
+  const issues = A.issues.filter(i => !/not in the staff directory/.test(i) && [...mineCodes].some(c => new RegExp('\\b' + c + '\\b').test(i)));
+  $('#main').innerHTML = `<div class="sheet ro">
+    <div class="phead"><div><h2>${esc(w.title || 'Duty roster')} · ${esc(w.range)}</h2><div class="hint"><span class="chip mine">AB</span> 1st year (yours) · <span class="chip">AB</span> senior's schedule</div></div>
+      <div class="acts noprint"><button id="backPlan">← Back to plan</button><button class="primary" id="dlDocx">⬇ Download ${w.hasFile ? 'Word (.docx)' : 'Word'}</button></div></div>
+    ${issues.length ? `<details class="issues noprint"><summary>${issues.length} thing${issues.length > 1 ? 's' : ''} to check</summary><ul>${issues.map(i => `<li>${esc(i)}</li>`).join('')}</ul></details>` : ''}
+    ${g}
+    ${w.hasFile ? '' : `<p class="hint noprint">This week has no original Word file stored, so the download uses the app's own layout. Upload the senior's .docx again (choose “update”) to download in the original format.</p>`}
+  </div>`;
+}
+$('#main').addEventListener('click', e => {
+  if (e.target.id === 'backPlan') go('plan');
+  if (e.target.id === 'dlDocx') downloadDocx(week());
+});
+
+/* ================= original .docx in, original .docx out ================= */
+const idb = (() => {
+  let dbp;
+  const open = () => dbp || (dbp = new Promise((res, rej) => { const r = indexedDB.open('routine-maker', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('files'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }));
+  const tx = async (mode, fn) => { const db = await open(); return new Promise((res, rej) => {
+    const t = db.transaction('files', mode); const q = fn(t.objectStore('files')); t.oncomplete = () => res(q && q.result); t.onerror = () => rej(t.error); }); };
+  return { get: k => tx('readonly', s => s.get(k)), put: (k, v) => tx('readwrite', s => s.put(v, k)), del: k => tx('readwrite', s => s.delete(k)) };
+})();
+function bufToB64(buf){ const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); }
+function b64ToBuf(b){ const s = atob(b), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u.buffer; }
+
+async function downloadDocx(w){
+  if (!w) return;
+  let f = null; try { f = await idb.get(w.id); } catch(e){}
+  if (!f){ alert("The original Word file for this week isn't stored on this device, so you'll get the app's own Word layout instead.\n\nTo get the original format, upload the senior's .docx again and choose “update”."); return download(fileBase(w) + '.doc', wordHtml(w), 'application/msword'); }
+  try {
+    const out = await buildDocx(w, f.buf);
+    const name = (f.name || fileBase(w) + '.docx').replace(/\.docx$/i, '') + ' (1st year).docx';
+    download(name, new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }));
+  } catch(err){ console.error(err); alert('Could not build the Word file: ' + err.message); }
+}
+
+/* write my-category codes into the roster table of the original document.
+   Only the table cells that change are re-written; every other byte of the file stays as it was. */
+async function buildDocx(w, buf){
+  const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  const xml = await unzipEntry(buf, 'word/document.xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length) throw new Error('document.xml could not be read');
+  const body = doc.getElementsByTagNameNS(W, 'body')[0];
+  const tbl = [...body.children].find(c => c.localName === 'tbl'); if (!tbl) throw new Error('No roster table in the original file');
+  const nth = [...doc.getElementsByTagNameNS(W, 'tbl')].indexOf(tbl);
+  const spans = tableCellSpans(xml, nth);                // [row][cell] -> {s, e} offsets in xml
+  const rootOpen = xml.match(/<w:document\b[^>]*>/)[0];
+  const m = staffMap(), edits = [];
+  w.days.forEach((day, d) => {
+    const row = spans[day.row ?? d + 1]; if (!row) return;
+    w.columns.forEach((col, ci) => {
+      const sp = row[col.src ?? ci + 1]; if (!sp) return;
+      const want = ((w.cells[cellKey(d, col.id)] || {}).staff || []).filter(c => isMine(c, m));
+      const frag = new DOMParser().parseFromString(rootOpen + xml.slice(sp.s, sp.e) + '</w:document>', 'application/xml');
+      const tc = frag.documentElement.firstElementChild;
+      if (!tc || !writeMine(frag, W, tc, want, m)) return;
+      // serialise just this cell and drop namespace declarations the document root already makes
+      let out = new XMLSerializer().serializeToString(tc);
+      out = out.replace(/^<w:tc\b[^>]*>/, tag => tag.replace(/\s+xmlns(:\w+)?="[^"]*"/g, d => rootOpen.includes(d.trim()) ? '' : d));
+      edits.push({ s: sp.s, e: sp.e, out });
+    });
+  });
+  let res = xml;
+  edits.sort((a, b) => b.s - a.s).forEach(x => { res = res.slice(0, x.s) + x.out + res.slice(x.e); });
+  return zipReplace(buf, 'word/document.xml', res);
+}
+/* offsets of each <w:tc> of the nth <w:tbl> (nested tables are skipped) */
+function tableCellSpans(xml, nth){
+  const re = /<(\/?)w:(tbl|tr|tc)(?=[\s>\/])[^>]*?(\/?)>/g; let x, seen = -1, depth = 0, inT = false, rows = [], row = null, cs = -1;
+  while ((x = re.exec(xml))){
+    const close = x[1] === '/', tag = x[2], selfc = x[3] === '/';
+    if (tag === 'tbl'){
+      if (!close && !selfc){ if (!inT){ seen++; if (seen === nth){ inT = true; depth = 1; continue; } } else depth++; }
+      else if (close && inT){ depth--; if (depth === 0) break; }
+      continue;
+    }
+    if (!inT || depth !== 1 || selfc) continue;
+    if (tag === 'tr'){ if (!close){ row = []; rows.push(row); } else row = null; }
+    else if (tag === 'tc' && row){ if (!close) cs = x.index; else { row.push({ s: cs, e: re.lastIndex }); } }
+  }
+  return rows;
+}
+function writeMine(doc, W, tc, want, m){
+  const kids = (el, n) => [...el.children].filter(c => c.localName === n && c.namespaceURI === W);
+  const isU = r => { const pr = kids(r, 'rPr')[0]; const u = pr && kids(pr, 'u')[0]; return !!(u && u.getAttributeNS(W, 'val') !== 'none'); };
+  const rText = r => [...r.getElementsByTagNameNS(W, 't')].map(t => t.textContent).join('');
+  const paras = kids(tc, 'p').map(p => { const rs = kids(p, 'r'); const nonU = rs.filter(r => !isU(r));
+    const txt = nonU.map(rText).join(''); return { p, rs, nonU, all: rs.map(rText).join(''), toks: splitCodes(txt) }; });
+  const present = new Set(paras.flatMap(x => x.toks).filter(t => isMine(t, m)));
+  const add = want.filter(c => !present.has(c)), drop = [...present].filter(c => !want.includes(c));
+  if (!add.length && !drop.length) return false;
+  const stripU = pr => { if (pr) kids(pr, 'u').forEach(u => u.remove()); return pr; };
+  const runPr = () => {
+    for (const x of paras) for (const r of x.nonU){ const pr = kids(r, 'rPr')[0]; if (pr) return pr.cloneNode(true); }
+    for (const x of paras){ const ppr = kids(x.p, 'pPr')[0], pr = ppr && kids(ppr, 'rPr')[0]; if (pr){ const n = doc.createElementNS(W, 'w:rPr'); [...pr.children].forEach(ch => n.appendChild(ch.cloneNode(true))); return stripU(n); } }
+    for (const x of paras) for (const r of x.rs){ const pr = kids(r, 'rPr')[0]; if (pr) return stripU(pr.cloneNode(true)); }
+    return null;
+  };
+  const newRun = text => { const r = doc.createElementNS(W, 'w:r'); const pr = runPr(); if (pr) r.appendChild(pr);
+    const t = doc.createElementNS(W, 'w:t'); t.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve'); t.textContent = text; r.appendChild(t); return r; };
+  // remove codes that are no longer wanted (rewrite that paragraph's plain text)
+  for (const x of paras) if (x.toks.some(t => drop.includes(t))){
+    const keep = x.toks.filter(t => !drop.includes(t)); const first = x.nonU[0];
+    const pr = first && kids(first, 'rPr')[0] ? kids(first, 'rPr')[0].cloneNode(true) : null;
+    x.nonU.forEach(r => r.remove());
+    if (keep.length){ const r = doc.createElementNS(W, 'w:r'); if (pr) r.appendChild(pr); const t = doc.createElementNS(W, 'w:t'); t.textContent = keep.join('/'); r.appendChild(t); x.p.appendChild(r); }
+    x.toks = keep; x.nonU = []; x.all = kids(x.p, 'r').map(rText).join('');
+  }
+  if (!add.length) return true;
+  const text = add.join('/');
+  const staffP = [...paras].reverse().find(x => x.toks.length);
+  if (staffP){ staffP.p.appendChild(newRun('/' + text)); return true; }
+  // no codes yet: use the last empty line after the case name (the roster puts codes on the bottom line)
+  const lastText = paras.map(x => !!x.all.trim()).lastIndexOf(true);
+  const emptyP = paras.filter((x, i) => i > lastText && !x.all.trim()).pop();
+  if (emptyP){ emptyP.p.appendChild(newRun(text)); return true; }
+  const last = paras[paras.length - 1];
+  const p = doc.createElementNS(W, 'w:p');
+  const ppr = last && kids(last.p, 'pPr')[0]; if (ppr){ const c = ppr.cloneNode(true); kids(c, 'rPr').forEach(r => stripU(r)); p.appendChild(c); }
+  p.appendChild(newRun(text)); tc.appendChild(p);
+  return true;
+}
+
+/* rebuild the zip: every entry copied byte-for-byte except the one replaced */
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++){ let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+const crc32 = u => { let c = 0xFFFFFFFF; for (let i = 0; i < u.length; i++) c = CRC_T[(c ^ u[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+async function zipReplace(buf, target, text){
+  const u8 = new Uint8Array(buf), dv = new DataView(buf), td = new TextDecoder();
+  let eocd = -1; for (let i = u8.length - 22; i >= Math.max(0, u8.length - 66000); i--) if (dv.getUint32(i, true) === 0x06054b50){ eocd = i; break; }
+  if (eocd < 0) throw new Error('Not a zip file');
+  const n = dv.getUint16(eocd + 10, true), cdOff = dv.getUint32(eocd + 16, true);
+  const ents = []; let p = cdOff;
+  for (let i = 0; i < n; i++){
+    const nl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), len = 46 + nl + xl + cl;
+    ents.push({ cd: u8.slice(p, p + len), name: td.decode(u8.subarray(p + 46, p + 46 + nl)), off: dv.getUint32(p + 42, true) });
+    p += len;
+  }
+  const byOff = [...ents].sort((a, b) => a.off - b.off);
+  byOff.forEach((e, i) => e.end = i + 1 < byOff.length ? byOff[i + 1].off : cdOff);
+  const raw = new TextEncoder().encode(text), crc = crc32(raw);
+  const comp = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer());
+  const parts = []; let pos = 0;
+  for (const e of byOff){
+    e.newOff = pos;
+    if (e.name === target){
+      const nameB = new TextEncoder().encode(e.name), h = new Uint8Array(30 + nameB.length), hv = new DataView(h.buffer);
+      const flags = dv.getUint16(e.off + 6, true) & ~0x0008;
+      hv.setUint32(0, 0x04034b50, true); hv.setUint16(4, 20, true); hv.setUint16(6, flags, true); hv.setUint16(8, 8, true);
+      hv.setUint16(10, dv.getUint16(e.off + 10, true), true); hv.setUint16(12, dv.getUint16(e.off + 12, true), true);
+      hv.setUint32(14, crc, true); hv.setUint32(18, comp.length, true); hv.setUint32(22, raw.length, true);
+      hv.setUint16(26, nameB.length, true); hv.setUint16(28, 0, true); h.set(nameB, 30);
+      parts.push(h, comp); pos += h.length + comp.length;
+      const cv = new DataView(e.cd.buffer); cv.setUint16(8, flags, true); cv.setUint16(10, 8, true);
+      cv.setUint32(16, crc, true); cv.setUint32(20, comp.length, true); cv.setUint32(24, raw.length, true);
+    } else { const chunk = u8.subarray(e.off, e.end); parts.push(chunk); pos += chunk.length; }
+  }
+  const cdStart = pos; let cdLen = 0;
+  for (const e of ents){ new DataView(e.cd.buffer).setUint32(42, e.newOff, true); parts.push(e.cd); cdLen += e.cd.length; }
+  const end = u8.slice(eocd); const ev = new DataView(end.buffer);
+  ev.setUint32(12, cdLen, true); ev.setUint32(16, cdStart, true); parts.push(end);
+  return new Blob(parts);
 }
 
 render();

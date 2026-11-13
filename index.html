@@ -628,7 +628,7 @@ let softT; function softRefresh(){ clearTimeout(softT); softT = setTimeout(() =>
 
 $('#main').addEventListener('click', e => {
   const w = week(); if (!w) return;
-  const td = e.target.closest('td.cell');
+  const td = view === 'edit' && e.target.closest('td.cell');   // review screen is read-only
   if (td){ sel = { dayIdx: +td.dataset.d, colId: td.dataset.c }; openCell(); return; }
   const del = e.target.closest('[data-delcol]');
   if (del && !locked(w)){
@@ -655,7 +655,7 @@ $('#main').addEventListener('click', e => {
 
 /* keyboard nav on grid */
 document.addEventListener('keydown', e => {
-  const w = week(); if (!w || !sel || $('dialog[open]')) return;
+  const w = week(); if (!w || !sel || view !== 'edit' || $('dialog[open]')) return;
   const tag = document.activeElement && document.activeElement.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
   const ci = w.columns.findIndex(c => c.id === sel.colId);

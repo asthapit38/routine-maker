@@ -11,7 +11,7 @@ A super lightweight, single-file web app for building a department's **weekly du
 2. The uploaded week is **locked 🔒**. The cases, the senior's staff codes, the columns and the dates are read-only.
 3. Fill in the **1st-year residents**: click a cell and pick from the 1st-year list. Your people show as blue chips. **My planner** (below the grid) shows where each 1st year is every day, who is free, and who is on leave.
 4. If the senior sends a **revised file** for the same week, upload it and choose *update*. Their part is replaced, and your 1st-year assignments are kept. Anything that can't be placed (e.g. a removed column) is listed for you.
-5. **Next-day rule:** a 1st year who works a **NEURO** or **GI** case must be in **OT 5** the next day. When you place someone on such a case, the app offers to add them to OT 5 the next day. Missing ones are outlined in red and listed under *things to check*, and **Apply rule** in the planner fills them all in. You can change the cases and the column in Settings.
+5. **Next-day rule:** a 1st year who works in **OT 2** (neuro) or **OT 7** (GI) must be in **OT 5/LR** the next day. When you place someone in OT 2 or OT 7, the app offers to add them to OT 5/LR the next day. Missing ones are outlined in red and listed under *things to check*, and **Apply rule** in the planner fills them all in. You can change the columns in Settings.
 6. **Download → Word** to share the finished roster.
 
 Which categories you can edit is set under **⋯ → Settings & locking** (default: *1st year residents*). The same place can unlock a week if an upload needs fixing. The lock prevents accidental edits on this device; it is not access control.

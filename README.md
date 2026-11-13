@@ -5,6 +5,16 @@ A super lightweight, single-file web app for building a department's **weekly du
 - **No install, no server, no dependencies.** Open `index.html` in a browser, or host it on any static host (GitHub Pages works).
 - **Data lives in the browser's `localStorage`.** Download a backup now and then, because clearing browser data erases it.
 
+## Workflow
+
+1. A senior (3rd-year) resident sends the week's roster as a `.docx`. **Upload** it.
+2. The uploaded week is **locked 🔒**. The cases, the senior's staff codes, the columns and the dates are read-only.
+3. Fill in the **1st-year residents**: click a cell and pick from the 1st-year list. Your people show as blue chips. **My planner** (below the grid) shows where each 1st year is every day, who is free, and who is on leave.
+4. If the senior sends a **revised file** for the same week, upload it and choose *update*. Their part is replaced, and your 1st-year assignments are kept. Anything that can't be placed (e.g. a removed column) is listed for you.
+5. **Download → Word** to share the finished roster.
+
+Which categories you can edit is set under **⋯ → Settings & locking** (default: *1st year residents*). The same place can unlock a week if an upload needs fixing. The lock prevents accidental edits on this device; it is not access control.
+
 ## Features
 
 - **Weekly routines.** Each week is a grid of columns (OT 1 … ACADEMIC, which you can rename, add or remove) × 7 days. **+ New week** fills in the next dates for you (Bikram Sambat style `YYYY/MM/DD`; set the days in the month for the rollover). It can copy the columns, and optionally the assignments, from an earlier week.

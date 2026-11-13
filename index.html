@@ -84,6 +84,23 @@ table.grid{border-collapse:separate;border-spacing:0;min-width:100%}
 .chip.leave{background:var(--bad);color:var(--bad-ink);text-decoration:line-through}
 .chip.unknown{border:1px dashed #9aa3b5;background:#fff}
 .chip.hl{background:var(--hl);color:#000;box-shadow:0 0 0 2px #e0c800}
+.chip.mine{background:#dbe7fd;color:#0b3d91;border-color:#1f6feb}
+.lockbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px;padding:8px 12px;border-radius:8px;background:#eef4ff;border:1px solid #c9dafc;font-size:13px}
+.lockbar b{color:#0b3d91}
+.locked-info{background:#f4f5f7;border-radius:8px;padding:8px 10px;margin-bottom:10px;font-size:13px}
+.locked-info .chip{margin-right:3px}
+.err{color:var(--bad-ink);font-size:13px;margin-top:6px}
+input[readonly]{cursor:default}
+.planner{border-collapse:collapse;width:100%;font-size:12px}
+.planner th,.planner td{border:1px solid var(--line2);padding:4px 6px;text-align:center;vertical-align:top}
+.planner th{background:#f0f2f6;font-weight:600}
+.planner td.who{text-align:left;white-space:nowrap;cursor:pointer}
+.planner td.who.on{background:var(--hl)}
+.planner td.free{background:#effaf1;color:#2b7a3d}
+.planner td.lv{background:var(--bad);color:var(--bad-ink);font-weight:700}
+.planner td.many{background:var(--warn);color:var(--warn-ink)}
+.planner tfoot td{font-weight:600;background:#fafbfc}
+.cats label{display:flex;gap:8px;align-items:center;padding:3px 0}
 .note{font-size:11px;color:var(--muted);white-space:pre-wrap}
 .addcol{padding:6px 10px}
 
@@ -143,7 +160,7 @@ dialog::backdrop{background:rgba(20,25,35,.35)}
   input,textarea{border:0!important;background:transparent!important;resize:none}
   .chip{background:none!important;padding:0;border:0!important;color:#000!important;text-decoration:none!important;box-shadow:none!important}
   .lower{grid-template-columns:1fr}
-  .summary-panel{display:none}
+  .summary-panel,.planner-panel,.lockbar{display:none!important}
 }
 </style>
 </head>
@@ -170,6 +187,7 @@ dialog::backdrop{background:rgba(20,25,35,.35)}
   <div class="menu" id="moreMenu">
     <button>⋯</button>
     <div class="menu-list">
+      <button data-more="settings">Settings &amp; locking…</button>
       <button data-more="dup">Duplicate this week</button>
       <button data-more="del" class="danger">Delete this week</button>
     </div>
@@ -182,12 +200,14 @@ dialog::backdrop{background:rgba(20,25,35,.35)}
 <!-- cell editor -->
 <dialog id="dlgCell"><form method="dialog" class="dlg" id="cellForm">
   <h2 id="cellTitle">Edit</h2>
+  <div id="cLocked" class="locked-info" hidden></div>
   <div class="row"><label for="cLabel">Case / unit</label><input type="text" id="cLabel" list="labelList" placeholder="e.g. URO, GI, PLASTIC, XX = closed" autocomplete="off"></div>
   <div class="row"><label for="cStaff">Staff codes</label><input type="text" id="cStaff" placeholder="e.g. RV/MS" autocomplete="off"></div>
   <div class="row"><label for="cNote">Note</label><input type="text" id="cNote" placeholder="optional" autocomplete="off"></div>
   <input type="text" id="cFilter" placeholder="Search staff to add…" style="width:100%;margin-bottom:6px" autocomplete="off">
   <div class="picker" id="cPicker"></div>
   <div class="hint" style="margin-top:6px">Orange = already on duty elsewhere that day · Red = on leave</div>
+  <div id="cErr" class="err" hidden></div>
   <div class="actions">
     <button type="button" id="cClear" class="danger">Clear</button>
     <span class="grow" style="flex:1"></span>
@@ -206,6 +226,17 @@ dialog::backdrop{background:rgba(20,25,35,.35)}
   <div class="row"><label>Copy from</label><select id="nCopy"></select></div>
   <div class="row"><label></label><label style="min-width:0;color:inherit"><input type="checkbox" id="nCopyAssign"> Also copy assignments (not just columns)</label></div>
   <div class="actions"><button value="cancel" formnovalidate>Cancel</button><button value="ok" class="primary">Create</button></div>
+</form></dialog>
+
+<!-- settings -->
+<dialog id="dlgSettings"><form method="dialog" class="dlg">
+  <h2>Settings</h2>
+  <p style="margin:0 0 6px"><b>Categories I schedule</b></p>
+  <div class="hint" style="margin-bottom:6px">In a locked (uploaded) week, you can only add or remove people in these categories. Everything else is read-only.</div>
+  <div class="cats" id="setCats"></div>
+  <p style="margin:14px 0 6px"><b>This week</b></p>
+  <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="setLock"> Lock the senior's schedule for this week</label>
+  <div class="actions"><button value="ok" class="primary">Done</button></div>
 </form></dialog>
 
 <!-- staff -->
@@ -234,6 +265,17 @@ function load(){
   try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && Array.isArray(s.weeks)) return s; } catch(e){}
   return blankState();
 }
+/* ---- locking: an uploaded senior schedule is read-only except for "my" categories (1st year by default) ---- */
+const lc = s => String(s || '').trim().toLowerCase();
+function allCats(){ return [...new Set(state.staff.map(s => s.category).filter(Boolean))]; }
+function myCats(){
+  if (state.settings && Array.isArray(state.settings.myCats)) return new Set(state.settings.myCats.map(lc));
+  return new Set(allCats().filter(c => /\b(1st|first)\b/i.test(c)).map(lc));   // default: "1st year residents"
+}
+function myCatsLabel(){ const m = myCats(); const names = allCats().filter(c => m.has(lc(c))); return names.length ? names.join(', ') : 'no category chosen'; }
+function isMine(code, map = staffMap()){ const s = map.get(code); return !!(s && myCats().has(lc(s.category))); }
+const locked = w => !!(w && w.locked);
+const RO = w => locked(w) ? 'readonly title="Locked: from the senior\'s schedule"' : '';
 let saveTimer;
 function save(){
   try { localStorage.setItem(KEY, JSON.stringify(state)); flash('Saved'); }
@@ -270,7 +312,7 @@ function splitCodes(str){
   return String(str||'').split(/[\/,;\s]+/).map(s => s.replace(/\*/g,'').trim()).filter(Boolean);
 }
 function weekLabel(w){
-  return (w.range || 'Untitled week') ;
+  return (w.locked ? '🔒 ' : '') + (w.range || 'Untitled week');
 }
 function sortWeeks(){ state.weeks.sort((a,b) => (b.range||'').localeCompare(a.range||'') || b.created - a.created); }
 
@@ -338,11 +380,11 @@ function render(){
   let h = `<div class="sheet">
   <div class="head">
     <div class="titles">
-      <input data-f="dept" value="${esc(w.dept)}" placeholder="Department">
-      <input data-f="inst" value="${esc(w.inst)}" placeholder="Institute">
-      <input data-f="title" value="${esc(w.title)}" placeholder="Title">
-      <input data-f="range" class="range" value="${esc(w.range)}" placeholder="Date range, e.g. 2083/07/30-2083/08/06">
-      <input data-f="conf" class="plain" style="text-align:left;font-weight:400;max-width:none;margin:6px 0 0" value="${esc(w.conf)}" placeholder="Morning conference…">
+      <input data-f="dept" value="${esc(w.dept)}" placeholder="Department" ${RO(w)}>
+      <input data-f="inst" value="${esc(w.inst)}" placeholder="Institute" ${RO(w)}>
+      <input data-f="title" value="${esc(w.title)}" placeholder="Title" ${RO(w)}>
+      <input data-f="range" class="range" value="${esc(w.range)}" placeholder="Date range, e.g. 2083/07/30-2083/08/06" ${RO(w)}>
+      <input data-f="conf" class="plain" style="text-align:left;font-weight:400;max-width:none;margin:6px 0 0" value="${esc(w.conf)}" placeholder="Morning conference…" ${RO(w)}>
     </div>
     <div class="leave">
       <label for="leaveTa">LEAVE</label>
@@ -350,14 +392,15 @@ function render(){
       <div class="hint">Format <i>CODE: dates</i> — staff on leave are flagged in red.</div>
     </div>
   </div>
+  ${locked(w) ? `<div class="lockbar">🔒 <span><b>Senior's schedule is locked.</b> You can add or remove <b>${esc(myCatsLabel())}</b> only. Upload a revised file for the same week to update it; your assignments are kept.</span></div>` : ''}
   <div class="gridwrap"><table class="grid"><thead><tr><th class="day">DAY /<br>DATE</th>`;
   w.columns.forEach(c => {
-    h += `<th><div class="colname"><input data-col="${c.id}" value="${esc(c.name)}" title="Rename column"><button class="x noprint" data-delcol="${c.id}" title="Remove column">×</button></div></th>`;
+    h += `<th><div class="colname"><input data-col="${c.id}" value="${esc(c.name)}" ${locked(w) ? RO(w) : 'title="Rename column"'}>${locked(w) ? '' : `<button class="x noprint" data-delcol="${c.id}" title="Remove column">×</button>`}</div></th>`;
   });
-  h += `<th class="noprint" style="min-width:0"><button class="addcol link" id="addCol" title="Add column">+ column</button></th></tr></thead><tbody>`;
+  h += `<th class="noprint" style="min-width:0">${locked(w) ? '' : '<button class="addcol link" id="addCol" title="Add column">+ column</button>'}</th></tr></thead><tbody>`;
   w.days.forEach((day, d) => {
     const wk = day.day === 'SAT' || day.day === 'SUN';
-    h += `<tr class="${wk?'wkend':''}"><th class="day"><input class="d" data-dd="${d}" value="${esc(day.date)}" placeholder="—"><br><input data-dw="${d}" value="${esc(day.day)}"></th>`;
+    h += `<tr class="${wk?'wkend':''}"><th class="day"><input class="d" data-dd="${d}" value="${esc(day.date)}" placeholder="—" ${RO(w)}><br><input data-dw="${d}" value="${esc(day.day)}" ${RO(w)}></th>`;
     w.columns.forEach(c => {
       const v = w.cells[cellKey(d, c.id)];
       const isSel = sel && sel.dayIdx === d && sel.colId === c.id;
@@ -371,6 +414,7 @@ function render(){
             else if ((A.perDay[d].get(code)||0) > 1) cls.push('dup');
             if (!A.known.has(code)) cls.push('unknown');
             if (highlight === code) cls.push('hl');
+            if (locked(w) && isMine(code, A.known)) cls.push('mine');
             const s = A.known.get(code);
             return `<span class="${cls.join(' ')}" title="${esc(s ? s.name + ' · ' + s.category : 'Not in staff directory')}">${esc(code)}</span>`;
           }).join('') + '</div>';
@@ -385,6 +429,7 @@ function render(){
   <div class="legend noprint"><span><span class="chip">AB</span> assigned</span><span><span class="chip dup">AB</span> twice same day</span><span><span class="chip leave">AB</span> on leave</span><span><span class="chip unknown">AB</span> not in directory</span><span>Click a cell to edit · arrow keys + Enter also work · Delete clears</span></div>
   ${A.issues.length ? `<details class="issues noprint"><summary>${A.issues.length} thing${A.issues.length>1?'s':''} to check</summary><ul>${A.issues.map(i => `<li>${esc(i)}</li>`).join('')}</ul></details>` : ''}
   </div>
+  ${plannerHtml(w, A)}
   <div class="lower">
     <div class="panel summary-panel"><h3>Duties this week <span class="hint">— click a name to highlight</span></h3><div class="summary">${summaryHtml(A)}</div></div>
     <div class="panel">
@@ -395,6 +440,32 @@ function render(){
     </div>
   </div>`;
   main.innerHTML = h;
+}
+
+/* who-is-where table for the categories I schedule */
+function plannerHtml(w, A){
+  const mine = state.staff.filter(s => myCats().has(lc(s.category)));
+  if (!mine.length) return `<div class="panel planner-panel noprint" style="margin-top:16px"><h3>My planner</h3><span class="hint">Choose the categories you schedule in <b>⋯ → Settings</b> to see who is free each day.</span></div>`;
+  const where = w.days.map(() => new Map());   // per day: code -> [column names]
+  for (const [k, v] of Object.entries(w.cells)){
+    const [d, c] = k.split('|'); const col = w.columns.find(x => x.id === c); if (!col || !w.days[d]) continue;
+    (v.staff || []).forEach(code => { const m = where[d]; m.set(code, [...(m.get(code) || []), col.name]); });
+  }
+  const free = w.days.map(() => 0);
+  let rows = mine.map(s => {
+    let total = 0;
+    const tds = w.days.map((day, d) => {
+      const at = where[d].get(s.code) || [];
+      total += at.length;
+      if (A.onLeave(s.code, d)) return `<td class="lv" title="On leave">LEAVE${at.length ? '<br>' + esc(at.join(', ')) : ''}</td>`;
+      if (!at.length){ free[d]++; return '<td class="free">free</td>'; }
+      return `<td class="${at.length > 1 ? 'many' : ''}">${esc(at.join(', '))}</td>`;
+    }).join('');
+    return `<tr><td class="who ${highlight===s.code?'on':''}" data-hl="${esc(s.code)}" title="${esc(s.name)}"><b>${esc(s.code)}</b> <span class="hint">${esc(s.name)}</span></td>${tds}<td><b>${total}</b></td></tr>`;
+  }).join('');
+  return `<div class="panel planner-panel noprint" style="margin-top:16px"><h3>My planner: ${esc(myCatsLabel())} <span class="hint">— where each person is, day by day</span></h3>
+    <div style="overflow:auto"><table class="planner"><thead><tr><th style="text-align:left">Person</th>${w.days.map(d => `<th>${esc(d.day)} ${esc(d.date)}</th>`).join('')}<th>Total</th></tr></thead>
+    <tbody>${rows}</tbody><tfoot><tr><td style="text-align:left">Free</td>${free.map(n => `<td>${n}</td>`).join('')}<td></td></tr></tfoot></table></div></div>`;
 }
 
 function summaryHtml(A){
@@ -416,6 +487,7 @@ function summaryHtml(A){
 $('#main').addEventListener('input', e => {
   const w = week(); if (!w) return;
   const t = e.target;
+  if (t.readOnly) return;
   if (t.dataset.f){ w[t.dataset.f] = t.value; save(); if (t.dataset.f === 'leave') softRefresh(); if (t.dataset.f === 'range') refreshWeekSel(); }
   else if (t.dataset.col){ const c = w.columns.find(c => c.id === t.dataset.col); if (c){ c.name = t.value; save(); } }
   else if (t.dataset.dd !== undefined){ w.days[t.dataset.dd].date = t.value; save(); }
@@ -430,7 +502,7 @@ $('#main').addEventListener('click', e => {
   const td = e.target.closest('td.cell');
   if (td){ sel = { dayIdx: +td.dataset.d, colId: td.dataset.c }; openCell(); return; }
   const del = e.target.closest('[data-delcol]');
-  if (del){
+  if (del && !locked(w)){
     const c = w.columns.find(c => c.id === del.dataset.delcol);
     const used = Object.keys(w.cells).some(k => k.endsWith('|' + c.id));
     if (!used || confirm(`Remove column "${c.name}" and its assignments?`)){
@@ -440,7 +512,7 @@ $('#main').addEventListener('click', e => {
     }
     return;
   }
-  if (e.target.id === 'addCol'){
+  if (e.target.id === 'addCol' && !locked(w)){
     w.columns.push({ id: uid(), name: 'New' }); save(); render();
     const inputs = document.querySelectorAll('thead input[data-col]'); const last = inputs[inputs.length-1]; last.focus(); last.select();
     return;
@@ -459,7 +531,11 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') c++; else if (e.key === 'ArrowLeft') c--;
   else if (e.key === 'ArrowDown') d++; else if (e.key === 'ArrowUp') d--;
   else if (e.key === 'Enter'){ e.preventDefault(); openCell(); return; }
-  else if (e.key === 'Delete' || e.key === 'Backspace'){ delete w.cells[cellKey(sel.dayIdx, sel.colId)]; save(); render(); return; }
+  else if (e.key === 'Delete' || e.key === 'Backspace'){
+    const k = cellKey(sel.dayIdx, sel.colId);
+    if (!locked(w)) delete w.cells[k];
+    else if (w.cells[k]){ const m = staffMap(); w.cells[k].staff = w.cells[k].staff.filter(c => !isMine(c, m)); }   // only remove my people
+    save(); render(); return; }
   else if (e.key === 'Escape'){ sel = null; render(); return; }
   else return;
   e.preventDefault();
@@ -475,7 +551,15 @@ function openCell(){
   const col = w.columns.find(c => c.id === colId); const day = w.days[d];
   const v = w.cells[cellKey(d, colId)] || {};
   $('#cellTitle').textContent = `${col.name} — ${day.day} ${day.date}`;
-  $('#cLabel').value = v.label || ''; $('#cStaff').value = (v.staff || []).join('/'); $('#cNote').value = v.note || ''; $('#cFilter').value = '';
+  const L = locked(w), m = staffMap();
+  const fixed = L ? (v.staff || []).filter(c => !isMine(c, m)) : [];
+  $('#cLabel').value = v.label || ''; $('#cNote').value = v.note || ''; $('#cFilter').value = '';
+  $('#cStaff').value = (v.staff || []).filter(c => !fixed.includes(c)).join('/');
+  $('#cLabel').disabled = $('#cNote').disabled = L;
+  $('#cStaff').placeholder = L ? 'Add ' + myCatsLabel() + ', e.g. MS/AD' : 'e.g. RV/MS';
+  $('#cLocked').hidden = !L;
+  if (L) $('#cLocked').innerHTML = `🔒 <b>Senior's schedule:</b> ${v.label ? `<u><b>${esc(v.label)}</b></u> ` : ''}${fixed.map(c => `<span class="chip">${esc(c)}</span>`).join('') || (v.label ? '' : '<span class="hint">empty</span>')}${v.note ? ` <i>${esc(v.note)}</i>` : ''}`;
+  $('#cErr').hidden = true;
   drawPicker();
   dlgCell.returnValue = '';
   dlgCell.showModal(); $('#cStaff').focus();
@@ -492,7 +576,8 @@ function drawPicker(){
   }
   const q = $('#cFilter').value.trim().toLowerCase();
   const groups = new Map();
-  state.staff.filter(s => !q || s.code.toLowerCase().includes(q) || (s.name||'').toLowerCase().includes(q))
+  const L = locked(w), mc = myCats();
+  state.staff.filter(s => (!L || mc.has(lc(s.category))) && (!q || s.code.toLowerCase().includes(q) || (s.name||'').toLowerCase().includes(q)))
     .forEach(s => { const c = s.category || 'Other'; if (!groups.has(c)) groups.set(c, []); groups.get(c).push(s); });
   let h = '';
   for (const [cat, list] of groups){
@@ -513,11 +598,23 @@ $('#cPicker').addEventListener('click', e => {
 $('#cStaff').addEventListener('input', drawPicker);
 $('#cFilter').addEventListener('input', drawPicker);
 $('#cFilter').addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); const b = $('#cPicker [data-pick]'); if (b){ b.click(); $('#cFilter').value=''; drawPicker(); } } });
-$('#cClear').onclick = () => { $('#cLabel').value = ''; $('#cStaff').value = ''; $('#cNote').value = ''; drawPicker(); };
+$('#cClear').onclick = () => { if (!locked(week())){ $('#cLabel').value = ''; $('#cNote').value = ''; } $('#cStaff').value = ''; drawPicker(); };
+// in a locked week, refuse codes outside my categories
+$('#cellForm').addEventListener('submit', e => {
+  if (e.submitter && e.submitter.value !== 'ok') return;
+  const w = week(); if (!locked(w)) return;
+  const m = staffMap(); const bad = splitCodes($('#cStaff').value).filter(c => !isMine(c, m));
+  if (bad.length){ e.preventDefault();
+    $('#cErr').textContent = `Not allowed: ${bad.join(', ')} ${bad.length > 1 ? 'are' : 'is'} not in ${myCatsLabel()}. The senior's part of the schedule is locked.`; $('#cErr').hidden = false; }
+});
 dlgCell.addEventListener('close', () => {
   if (dlgCell.returnValue !== 'ok') return;
   const w = week(); const k = cellKey(sel.dayIdx, sel.colId);
-  const v = { label: $('#cLabel').value.trim(), staff: [...new Set(splitCodes($('#cStaff').value))], note: $('#cNote').value.trim() };
+  let v = { label: $('#cLabel').value.trim(), staff: [...new Set(splitCodes($('#cStaff').value))], note: $('#cNote').value.trim() };
+  if (locked(w)){   // keep the senior's label, note and staff untouched; only my codes change
+    const old = w.cells[k] || { label: '', staff: [], note: '' }; const m = staffMap();
+    v = { label: old.label || '', note: old.note || '', staff: [...new Set([...(old.staff || []).filter(c => !isMine(c, m)), ...v.staff.filter(c => isMine(c, m))])] };
+  }
   if (!v.label && !v.staff.length && !v.note) delete w.cells[k]; else w.cells[k] = v;
   save(); render();
 });
@@ -580,10 +677,28 @@ document.querySelectorAll('.menu > button').forEach(b => b.onclick = e => {
 document.addEventListener('click', () => document.querySelectorAll('.menu').forEach(x => x.classList.remove('open')));
 document.querySelectorAll('[data-more]').forEach(b => b.onclick = () => {
   const w = week(); if (!w) return;
+  if (b.dataset.more === 'settings') return openSettings();
   if (b.dataset.more === 'dup'){ const c = JSON.parse(JSON.stringify(w)); c.id = uid(); c.created = Date.now(); c.range = (c.range || '') + ' (copy)'; state.weeks.push(c); state.current = c.id; }
   if (b.dataset.more === 'del'){ if (!confirm(`Delete the week "${weekLabel(w)}"? This cannot be undone (download a backup first if unsure).`)) return;
     state.weeks = state.weeks.filter(x => x !== w); sortWeeks(); state.current = state.weeks[0] ? state.weeks[0].id : null; }
   sel = null; save(); render();
+});
+
+/* ================= settings ================= */
+function openSettings(){
+  const cats = allCats(), m = myCats(), w = week();
+  $('#setCats').innerHTML = cats.length ? cats.map(c => `<label><input type="checkbox" value="${esc(c)}" ${m.has(lc(c)) ? 'checked' : ''}> ${esc(c)}</label>`).join('') : '<span class="hint">No categories yet: add staff first.</span>';
+  $('#setLock').checked = locked(w); $('#setLock').disabled = !w;
+  $('#dlgSettings').showModal();
+}
+$('#setCats').addEventListener('change', () => {
+  state.settings = { ...(state.settings || {}), myCats: [...document.querySelectorAll('#setCats input:checked')].map(i => i.value) };
+  save(); render();
+});
+$('#setLock').addEventListener('change', e => {
+  const w = week(); if (!w) return;
+  if (!e.target.checked && !confirm("Unlock this week? You (or anyone using this device) will be able to change the senior's schedule.")){ e.target.checked = true; return; }
+  w.locked = e.target.checked; save(); render();
 });
 
 /* ================= staff dialog ================= */
@@ -686,7 +801,7 @@ $('#btnUpload').onclick = () => $('#fileIn').click();
 $('#fileIn').onchange = async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return;
   try {
-    if (/\.docx$/i.test(f.name)) importWeek(await parseDocx(await f.arrayBuffer()), f.name);
+    if (/\.docx$/i.test(f.name)){ const d = await parseDocx(await f.arrayBuffer()); d.week.locked = true; importWeek(d, f.name); }
     else importJson(JSON.parse(await f.text()));
   } catch(err){ console.error(err); alert('Could not read that file: ' + err.message); }
 };
@@ -698,12 +813,44 @@ function mergeStaff(list){
   return added;
 }
 function importWeek(data, src){
-  const w = newWeekObj(data.week); w.id = uid(); w.created = Date.now();
+  const w = newWeekObj(data.week); w.id = uid(); w.created = Date.now(); w.locked = !!(data.week && data.week.locked);
   const added = mergeStaff(data.staff);
   const clash = state.weeks.find(x => x.range && x.range === w.range);
-  if (clash && confirm(`A week "${w.range}" already exists. Replace it? (Cancel keeps both.)`)) state.weeks = state.weeks.filter(x => x !== clash);
+  let msg = `Imported ${src}${added ? ` · ${added} staff added` : ''}`;
+  if (clash){
+    if (confirm(`Week "${w.range}" already exists.\n\nOK = update it with this file (the senior's part is replaced; your ${myCatsLabel()} assignments are kept).\nCancel = keep both as separate weeks.`)){
+      const lost = carryMine(clash, w);
+      w.id = clash.id; w.created = clash.created;
+      state.weeks = state.weeks.filter(x => x !== clash);
+      msg = `Updated ${w.range} from ${src}`;
+      if (lost.length) alert(`Updated. These of your assignments could not be placed because the column or day no longer exists:\n\n${lost.join('\n')}`);
+    }
+  }
   state.weeks.push(w); state.current = w.id; sel = null; save(); render();
-  flash(`Imported ${src}${added ? ` · ${added} staff added` : ''}`);
+  flash(msg);
+}
+/* copy my-category assignments (and leave lines) from an old version of a week into a new one */
+function carryMine(oldW, newW){
+  const m = staffMap(), lost = [];
+  // my categories are mine: drop whatever the revised file says about them, then put my version back
+  for (const [k, v] of Object.entries(newW.cells)){
+    v.staff = (v.staff || []).filter(c => !isMine(c, m));
+    if (!v.label && !v.staff.length && !v.note) delete newW.cells[k];
+  }
+  for (const [k, v] of Object.entries(oldW.cells)){
+    const mine = (v.staff || []).filter(c => isMine(c, m)); if (!mine.length) continue;
+    const [d, cid] = k.split('|'); const oc = oldW.columns.find(c => c.id === cid); const od = oldW.days[d];
+    const nc = oc && newW.columns.find(c => lc(c.name) === lc(oc.name));
+    let nd = od ? newW.days.findIndex(x => x.date && x.date === od.date && lc(x.day) === lc(od.day)) : -1;
+    if (nd < 0 && od && newW.days[d] && lc(newW.days[d].day) === lc(od.day)) nd = +d;
+    if (!nc || nd < 0){ lost.push(`${od ? od.day + ' ' + od.date : '?'} · ${oc ? oc.name : '?'}: ${mine.join('/')}`); continue; }
+    const nk = cellKey(nd, nc.id); const cell = newW.cells[nk] || (newW.cells[nk] = { label: '', staff: [], note: '' });
+    cell.staff = [...new Set([...(cell.staff || []), ...mine])];
+  }
+  const have = new Set(String(newW.leave || '').split('\n').map(s => s.trim()));
+  const extra = String(oldW.leave || '').split('\n').map(s => s.trim()).filter(s => s && !have.has(s));
+  if (extra.length) newW.leave = [newW.leave, ...extra].filter(Boolean).join('\n');
+  return lost;
 }
 function importJson(j){
   if (j.week) return importWeek(j, 'week');

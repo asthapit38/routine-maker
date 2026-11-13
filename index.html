@@ -362,7 +362,31 @@ function ruleCheck(w, known = staffMap()){
       if (!inTarget(d + 1, code)) misses.push({ code, from: d, to: d + 1, col: col.id, reason });
     });
   }));
+  // carry-over from the previous week's last day (e.g. Sunday OT 2 -> Monday OT 5/LR)
+  const pw = prevWeek(w);
+  if (pw && w.days.length){
+    const ld = pw.days.length - 1, pday = pw.days[ld];
+    pw.columns.filter(c => ruleCfg().from.some(f => colIs(c.name, f)) && !colIs(c.name, ruleCfg().to)).forEach(col => {
+      const v = pw.cells[cellKey(ld, col.id)]; if (!v) return;
+      (v.staff || []).filter(code => isMine(code, known)).forEach(code => {
+        const reason = `${col.name}${v.label ? ' (' + v.label + ')' : ''} on ${pday.day} ${pday.date}, last week`;
+        due[0].set(code, reason);
+        if (!inTarget(0, code)) misses.push({ code, from: -1, to: 0, col: null, reason });
+      });
+    });
+  }
   return { due, misses, spill, targets };
+}
+/* the week that ends the day before this one starts (weekday + date continuity) */
+function prevWeek(w){
+  if (!w.days.length) return null;
+  const first = w.days[0], fd = DAYS.indexOf(first.day), fn = parseInt(first.date, 10);
+  return state.weeks.find(x => {
+    if (x === w || !x.days.length) return false;
+    const last = x.days[x.days.length - 1], ln = parseInt(last.date, 10);
+    if (fd < 0 || DAYS.indexOf(last.day) !== (fd + 6) % 7) return false;
+    return !isNaN(fn) && !isNaN(ln) && (fn === ln + 1 || (fn === 1 && ln >= 28));
+  }) || null;
 }
 function applyRule(w, list){   // put each person into the (first) target column on the next day
   const t = ruleTargets(w)[0]; if (!t) return 0; let n = 0;
@@ -397,7 +421,8 @@ function analyse(w){
   const R = ruleCheck(w, known);
   const tName = R.targets[0] ? R.targets[0].name : '';
   R.misses.forEach(x => issues.unshift(`Rule: ${x.code} did ${x.reason} → should be in ${tName} on ${w.days[x.to].day} ${w.days[x.to].date}`));
-  R.spill.forEach(x => issues.push(`Rule: ${x.code} did ${x.reason} → put in ${tName} on the first day of next week`));
+  if (!state.weeks.some(x => x !== w && prevWeek(x) === w))
+    R.spill.forEach(x => issues.push(`Rule: ${x.code} did ${x.reason} → put in ${tName} on the first day of next week`));
   const missKey = new Set(R.misses.map(x => `${x.from}|${x.col}|${x.code}`));
   return { perDay, counts, onLeave, known, rule: R, missKey, issues: [...new Set(issues)] };
 }

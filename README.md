@@ -22,3 +22,27 @@ A super lightweight, single-file web app for building a department's **weekly du
   - Full backup (all weeks + staff) as `.json`
 
 Keyboard: click a cell, then use the arrow keys to move, **Enter** to edit and **Delete** to clear.
+
+## Install as an app (PWA)
+
+The app is a Progressive Web App. Once it's hosted over HTTPS:
+
+- **Android / Chrome / Edge (desktop):** click **Install app** in the toolbar, or use the browser menu → *Install app* / *Add to Home screen*.
+- **iPhone / iPad (Safari):** tap **Share → Add to Home Screen**.
+
+After the first visit it works **fully offline**. Rosters are kept on the device (localStorage), and the app asks the browser to keep that storage from being cleared automatically.
+
+> Each installed copy and each browser keeps **its own** data (on iOS, the home-screen app and Safari don't share storage). To move a roster between devices, use **Download → Full backup** and **Upload** it on the other device.
+
+## Deploy (free)
+
+The app is plain static files with no build step: `index.html`, `sw.js`, `manifest.webmanifest`, `icons/`.
+
+- **Vercel:** *Add New → Project* → import this GitHub repo → Framework preset **Other**, no build command, output directory `.` → Deploy. `vercel.json` sets the cache headers.
+- **Netlify:** *Add new site → Import from Git* → pick the repo. The build settings come from `netlify.toml` (publish `.`). Or drag-and-drop the folder onto app.netlify.com/drop.
+- **GitHub Pages:** *Settings → Pages* → deploy from branch, folder `/ (root)`. All paths are relative, so a sub-path like `/routine-maker/` works.
+- **Cloudflare Pages** (or any static host) works the same way.
+
+**When you change files**, bump `VERSION` in `sw.js` (e.g. `v1` → `v2`). Users then see a *"A new version is available — Reload"* prompt.
+
+Run locally: `python3 -m http.server` and open http://localhost:8000. The service worker needs `http(s)://`, so opening the file directly works but stays online-only.

@@ -2,8 +2,18 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Duty Roster</title>
+<meta name="description" content="Build, check and share weekly duty rosters. Works offline.">
+<meta name="theme-color" content="#1f6feb">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Roster">
 <style>
 :root{
   --bg:#f6f7f9; --panel:#fff; --ink:#1d2330; --muted:#677084; --line:#d9dde5; --line2:#eceef2;
@@ -22,10 +32,14 @@ input,select,textarea{border:1px solid var(--line);border-radius:6px;padding:6px
 textarea{width:100%;resize:vertical}
 
 /* top bar */
-.bar{position:sticky;top:0;z-index:20;display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+.bar{position:sticky;top:0;z-index:20;display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:calc(8px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 8px max(16px, env(safe-area-inset-left));background:var(--panel);border-bottom:1px solid var(--line)}
 .bar h1{font-size:16px;margin:0 8px 0 0}
 .bar .grow{flex:1}
 .saved{color:var(--muted);font-size:12px}
+.offline{font-size:12px;color:var(--warn-ink);background:var(--warn);border-radius:10px;padding:2px 8px}
+.toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:50;background:#1d2330;color:#fff;border-radius:10px;padding:10px 14px;display:flex;gap:12px;align-items:center;box-shadow:0 10px 30px rgba(0,0,0,.3);max-width:calc(100vw - 32px)}
+.toast button{background:#fff;color:#1d2330;border:0}
+.toast button.link{background:none;color:#9ec1ff}
 .menu{position:relative}
 .menu-list{position:absolute;right:0;top:calc(100% + 4px);background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:4px;min-width:220px;display:none;z-index:30}
 .menu.open .menu-list{display:block}
@@ -141,6 +155,8 @@ dialog::backdrop{background:rgba(20,25,35,.35)}
   <button id="btnStaff">Staff</button>
   <span class="grow"></span>
   <span id="saved" class="saved"></span>
+  <span id="offline" class="offline" hidden>Offline</span>
+  <button id="btnInstall" hidden title="Install as an app on this device">Install app</button>
   <button id="btnUpload">Upload</button>
   <div class="menu" id="dlMenu">
     <button id="btnDl">Download ▾</button>
@@ -842,6 +858,48 @@ async function parseDocx(buf){
 }
 
 render();
+
+/* ================= PWA: offline, install, updates ================= */
+function toast(html, actions = []){
+  document.querySelectorAll('.toast').forEach(t => t.remove());
+  const t = document.createElement('div'); t.className = 'toast noprint'; t.innerHTML = `<span>${html}</span>`;
+  actions.forEach(([label, fn, cls]) => { const b = document.createElement('button'); b.textContent = label; if (cls) b.className = cls; b.onclick = () => { t.remove(); fn && fn(); }; t.appendChild(b); });
+  document.body.appendChild(t);
+}
+const setOnline = () => { $('#offline').hidden = navigator.onLine; };
+addEventListener('online', setOnline); addEventListener('offline', setOnline); setOnline();
+
+// Ask the browser not to evict our localStorage under storage pressure.
+if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => p || navigator.storage.persist()).catch(() => {});
+
+let installEvt = null;
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; $('#btnInstall').hidden = false; });
+addEventListener('appinstalled', () => { installEvt = null; $('#btnInstall').hidden = true; flash('Installed'); });
+$('#btnInstall').onclick = async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; $('#btnInstall').hidden = true; };
+// iOS Safari has no install prompt: show a one-time hint.
+(() => {
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  let seen = false; try { seen = localStorage.getItem('routine-maker.iosHint'); } catch(e){}
+  if (ios && !standalone && !seen) toast('Install: tap <b>Share</b> → <b>Add to Home Screen</b>', [['OK', () => { try { localStorage.setItem('routine-maker.iosHint', '1'); } catch(e){} }]]);
+})();
+
+if ('serviceWorker' in navigator && location.protocol !== 'file:'){
+  addEventListener('load', async () => {
+    try {
+      const reg = await navigator.serviceWorker.register('sw.js');
+      let wantReload = false;   // only reload when the user accepted an update (not on the first install)
+      const offerUpdate = w => toast('A new version is available.', [['Reload', () => { wantReload = true; w.postMessage('SKIP_WAITING'); }], ['Later', null, 'link']]);
+      if (reg.waiting && navigator.serviceWorker.controller) offerUpdate(reg.waiting);
+      reg.addEventListener('updatefound', () => {
+        const w = reg.installing;
+        w && w.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) offerUpdate(w); });
+      });
+      navigator.serviceWorker.addEventListener('controllerchange', () => { if (wantReload){ wantReload = false; location.reload(); } });
+      setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000);
+    } catch (e) { console.warn('Service worker not registered', e); }
+  });
+}
 </script>
 </body>
 </html>

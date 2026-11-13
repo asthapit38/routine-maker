@@ -99,6 +99,9 @@ input[readonly]{cursor:default}
 .planner td.free{background:#effaf1;color:#2b7a3d}
 .planner td.lv{background:var(--bad);color:var(--bad-ink);font-weight:700}
 .planner td.many{background:var(--warn);color:var(--warn-ink)}
+.planner td.need{background:#fff;color:var(--bad-ink);box-shadow:inset 0 0 0 2px #e5484d;font-weight:600}
+.chip.rulemiss{box-shadow:0 0 0 2px #e5484d}
+.rulebar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 8px;font-size:13px}
 .planner tfoot td{font-weight:600;background:#fafbfc}
 .cats label{display:flex;gap:8px;align-items:center;padding:3px 0}
 .note{font-size:11px;color:var(--muted);white-space:pre-wrap}
@@ -134,6 +137,7 @@ dialog::backdrop{background:rgba(20,25,35,.35)}
 .picker button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .picker button.busy{border-color:#e0a800}
 .picker button.away{border-color:var(--bad-ink);color:var(--bad-ink)}
+.picker button.due{border:2px solid #2b7a3d;font-weight:700}
 .stafftbl{width:100%;border-collapse:collapse}
 .stafftbl td,.stafftbl th{padding:3px;border-bottom:1px solid var(--line2);text-align:left;font-size:13px}
 .stafftbl input{width:100%;padding:4px 6px}
@@ -206,7 +210,7 @@ dialog::backdrop{background:rgba(20,25,35,.35)}
   <div class="row"><label for="cNote">Note</label><input type="text" id="cNote" placeholder="optional" autocomplete="off"></div>
   <input type="text" id="cFilter" placeholder="Search staff to add…" style="width:100%;margin-bottom:6px" autocomplete="off">
   <div class="picker" id="cPicker"></div>
-  <div class="hint" style="margin-top:6px">Orange = already on duty elsewhere that day · Red = on leave</div>
+  <div class="hint" style="margin-top:6px">Orange = already on duty elsewhere that day · Red = on leave · Green border = due here by the next-day rule</div>
   <div id="cErr" class="err" hidden></div>
   <div class="actions">
     <button type="button" id="cClear" class="danger">Clear</button>
@@ -234,6 +238,10 @@ dialog::backdrop{background:rgba(20,25,35,.35)}
   <p style="margin:0 0 6px"><b>Categories I schedule</b></p>
   <div class="hint" style="margin-bottom:6px">In a locked (uploaded) week, you can only add or remove people in these categories. Everything else is read-only.</div>
   <div class="cats" id="setCats"></div>
+  <p style="margin:14px 0 6px"><b>Next-day rule</b></p>
+  <div class="hint" style="margin-bottom:6px">A person from my categories who works one of these cases must be in this column the next day. Leave the cases empty to turn the rule off.</div>
+  <div class="row"><label for="ruleAfter">After cases</label><input type="text" id="ruleAfter" placeholder="NEURO, GI"></div>
+  <div class="row"><label for="ruleCol">Next day in</label><input type="text" id="ruleCol" placeholder="OT 5"></div>
   <p style="margin:14px 0 6px"><b>This week</b></p>
   <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="setLock"> Lock the senior's schedule for this week</label>
   <div class="actions"><button value="ok" class="primary">Done</button></div>
@@ -332,6 +340,39 @@ function parseLeave(text){
   return m;
 }
 
+/* ---- next-day rule: after a NEURO/GI case, a 1st year is due in OT 5 the next day ---- */
+function ruleCfg(){ const r = state.settings && state.settings.rule; return { after: r ? r.after : ['NEURO', 'GI'], col: r ? r.col : 'OT 5' }; }
+const squash = x => lc(x).replace(/\s+/g, '');
+function ruleTrigger(label){   // which "after" case does this label match? (token match: "GI", "EYE/GI"; not "G SUR")
+  const toks = String(label || '').toUpperCase().split(/[\/,&+\s]+/).filter(Boolean);
+  return ruleCfg().after.find(a => toks.includes(a.toUpperCase()) || squash(label) === squash(a)) || null;
+}
+function ruleTargets(w){ const t = squash(ruleCfg().col); return t ? w.columns.filter(c => squash(c.name).startsWith(t)) : []; }
+/* -> { due: per day Map(code -> reason), misses: [{code, from, to, reason}], targets } */
+function ruleCheck(w, known = staffMap()){
+  const targets = ruleTargets(w), due = w.days.map(() => new Map()), misses = [], spill = [];
+  if (!targets.length || !ruleCfg().after.length) return { due, misses, spill, targets };
+  const tIds = new Set(targets.map(c => c.id));
+  const inTarget = (d, code) => targets.some(c => ((w.cells[cellKey(d, c.id)] || {}).staff || []).includes(code));
+  for (const [k, v] of Object.entries(w.cells)){
+    const [ds, cid] = k.split('|'); const d = +ds; const hit = ruleTrigger(v.label);
+    if (!hit || !w.days[d] || !w.columns.some(c => c.id === cid)) continue;
+    (v.staff || []).filter(code => isMine(code, known)).forEach(code => {
+      const reason = `${hit} on ${w.days[d].day} ${w.days[d].date}`;
+      if (d + 1 >= w.days.length){ spill.push({ code, reason }); return; }
+      due[d + 1].set(code, reason);
+      if (!inTarget(d + 1, code)) misses.push({ code, from: d, to: d + 1, col: cid, reason });
+    });
+  }
+  return { due, misses, spill, targets };
+}
+function applyRule(w, list){   // put each person into the (first) target column on the next day
+  const t = ruleTargets(w)[0]; if (!t) return 0; let n = 0;
+  list.forEach(({ code, to }) => { const k = cellKey(to, t.id); const c = w.cells[k] || (w.cells[k] = { label: '', staff: [], note: '' });
+    if (!c.staff.includes(code)){ c.staff.push(code); n++; } });
+  return n;
+}
+
 /* per-day analysis: duplicates, leave conflicts, counts */
 function analyse(w){
   const leave = parseLeave(w.leave);
@@ -355,7 +396,12 @@ function analyse(w){
       if (!known.has(code)) issues.push(`${code} is not in the staff directory`);
     }
   });
-  return { perDay, counts, onLeave, known, issues: [...new Set(issues)] };
+  const R = ruleCheck(w, known);
+  const tName = R.targets[0] ? R.targets[0].name : '';
+  R.misses.forEach(x => issues.unshift(`Rule: ${x.code} did ${x.reason} → should be in ${tName} on ${w.days[x.to].day} ${w.days[x.to].date}`));
+  R.spill.forEach(x => issues.push(`Rule: ${x.code} did ${x.reason} → put in ${tName} on the first day of next week`));
+  const missKey = new Set(R.misses.map(x => `${x.from}|${x.col}|${x.code}`));
+  return { perDay, counts, onLeave, known, rule: R, missKey, issues: [...new Set(issues)] };
 }
 
 /* ================= render ================= */
@@ -415,6 +461,7 @@ function render(){
             if (!A.known.has(code)) cls.push('unknown');
             if (highlight === code) cls.push('hl');
             if (locked(w) && isMine(code, A.known)) cls.push('mine');
+            if (A.missKey.has(`${d}|${c.id}|${code}`)) cls.push('rulemiss');
             const s = A.known.get(code);
             return `<span class="${cls.join(' ')}" title="${esc(s ? s.name + ' · ' + s.category : 'Not in staff directory')}">${esc(code)}</span>`;
           }).join('') + '</div>';
@@ -458,12 +505,19 @@ function plannerHtml(w, A){
       const at = where[d].get(s.code) || [];
       total += at.length;
       if (A.onLeave(s.code, d)) return `<td class="lv" title="On leave">LEAVE${at.length ? '<br>' + esc(at.join(', ')) : ''}</td>`;
+      const why = A.rule.due[d].get(s.code), tgt = A.rule.targets[0];
+      if (why && !A.rule.targets.some(t => at.includes(t.name))){
+        if (!at.length) free[d]++;
+        return `<td class="need" title="Did ${esc(why)}">needs ${esc(tgt.name)}${at.length ? '<br><span class="hint">now: ' + esc(at.join(', ')) + '</span>' : ''}</td>`;
+      }
       if (!at.length){ free[d]++; return '<td class="free">free</td>'; }
       return `<td class="${at.length > 1 ? 'many' : ''}">${esc(at.join(', '))}</td>`;
     }).join('');
     return `<tr><td class="who ${highlight===s.code?'on':''}" data-hl="${esc(s.code)}" title="${esc(s.name)}"><b>${esc(s.code)}</b> <span class="hint">${esc(s.name)}</span></td>${tds}<td><b>${total}</b></td></tr>`;
   }).join('');
-  return `<div class="panel planner-panel noprint" style="margin-top:16px"><h3>My planner: ${esc(myCatsLabel())} <span class="hint">— where each person is, day by day</span></h3>
+  const nm = A.rule.misses.length, r = ruleCfg();
+  const ruleLine = A.rule.targets.length && r.after.length ? `<div class="rulebar"><span class="hint">Rule: after <b>${esc(r.after.join(' / '))}</b> → next day in <b>${esc(A.rule.targets[0].name)}</b></span>${nm ? `<button class="primary" id="applyRule">Apply rule (${nm} missing)</button>` : '<span class="hint">✓ all followed</span>'}</div>` : '';
+  return `<div class="panel planner-panel noprint" style="margin-top:16px"><h3>My planner: ${esc(myCatsLabel())} <span class="hint">— where each person is, day by day</span></h3>${ruleLine}
     <div style="overflow:auto"><table class="planner"><thead><tr><th style="text-align:left">Person</th>${w.days.map(d => `<th>${esc(d.day)} ${esc(d.date)}</th>`).join('')}<th>Total</th></tr></thead>
     <tbody>${rows}</tbody><tfoot><tr><td style="text-align:left">Free</td>${free.map(n => `<td>${n}</td>`).join('')}<td></td></tr></tfoot></table></div></div>`;
 }
@@ -516,6 +570,9 @@ $('#main').addEventListener('click', e => {
     w.columns.push({ id: uid(), name: 'New' }); save(); render();
     const inputs = document.querySelectorAll('thead input[data-col]'); const last = inputs[inputs.length-1]; last.focus(); last.select();
     return;
+  }
+  if (e.target.id === 'applyRule'){
+    const n = applyRule(w, ruleCheck(w).misses); save(); render(); flash(`Added ${n} to ${ruleTargets(w)[0].name}`); return;
   }
   const hl = e.target.closest('[data-hl]');
   if (hl){ highlight = highlight === hl.dataset.hl ? null : hl.dataset.hl; render(); }
@@ -582,8 +639,10 @@ function drawPicker(){
   let h = '';
   for (const [cat, list] of groups){
     h += `<div class="cat">${esc(cat)}</div>` + list.map(s => {
-      const cls = [chosen.has(s.code) ? 'on' : '', A.onLeave(s.code, d) ? 'away' : busy.has(s.code) ? 'busy' : ''].join(' ');
-      const tip = s.name + (A.onLeave(s.code, d) ? ' — ON LEAVE' : '') + (busy.has(s.code) ? ' — also in ' + busy.get(s.code) : '');
+      const why = A.rule.due[d].get(s.code), here = A.rule.targets.some(t => t.id === colId);
+      const cls = [chosen.has(s.code) ? 'on' : '', A.onLeave(s.code, d) ? 'away' : busy.has(s.code) ? 'busy' : '', why && here ? 'due' : ''].join(' ');
+      const tip = s.name + (A.onLeave(s.code, d) ? ' — ON LEAVE' : '') + (busy.has(s.code) ? ' — also in ' + busy.get(s.code) : '')
+        + (why ? (here ? ' — DUE HERE (did ' + why + ')' : ' — due in ' + A.rule.targets[0].name + ' today (did ' + why + ')') : '');
       return `<button type="button" class="${cls}" data-pick="${esc(s.code)}" title="${esc(tip)}">${esc(s.code)}</button>`;
     }).join('');
   }
@@ -617,6 +676,13 @@ dlgCell.addEventListener('close', () => {
   }
   if (!v.label && !v.staff.length && !v.note) delete w.cells[k]; else w.cells[k] = v;
   save(); render();
+  // next-day rule: offer to place them in OT 5 tomorrow
+  const todo = ruleCheck(w).misses.filter(x => x.from === sel.dayIdx && x.col === sel.colId);
+  if (todo.length){
+    const t = ruleTargets(w)[0], day = w.days[todo[0].to];
+    toast(`${esc(todo.map(x => x.code).join(', '))} did ${esc(ruleTrigger(v.label))} → add to <b>${esc(t.name)}</b> on ${esc(day.day)} ${esc(day.date)}?`,
+      [['Add', () => { applyRule(w, todo); save(); render(); }], ['Not now', null, 'link']]);
+  }
 });
 
 /* ================= new week ================= */
@@ -689,12 +755,17 @@ function openSettings(){
   const cats = allCats(), m = myCats(), w = week();
   $('#setCats').innerHTML = cats.length ? cats.map(c => `<label><input type="checkbox" value="${esc(c)}" ${m.has(lc(c)) ? 'checked' : ''}> ${esc(c)}</label>`).join('') : '<span class="hint">No categories yet: add staff first.</span>';
   $('#setLock').checked = locked(w); $('#setLock').disabled = !w;
+  const r = ruleCfg(); $('#ruleAfter').value = r.after.join(', '); $('#ruleCol').value = r.col;
   $('#dlgSettings').showModal();
 }
 $('#setCats').addEventListener('change', () => {
   state.settings = { ...(state.settings || {}), myCats: [...document.querySelectorAll('#setCats input:checked')].map(i => i.value) };
   save(); render();
 });
+['#ruleAfter', '#ruleCol'].forEach(id => $(id).addEventListener('change', () => {
+  state.settings = { ...(state.settings || {}), rule: { after: $('#ruleAfter').value.split(/[,\/;]+/).map(x => x.trim()).filter(Boolean), col: $('#ruleCol').value.trim() } };
+  save(); render();
+}));
 $('#setLock').addEventListener('change', e => {
   const w = week(); if (!w) return;
   if (!e.target.checked && !confirm("Unlock this week? You (or anyone using this device) will be able to change the senior's schedule.")){ e.target.checked = true; return; }

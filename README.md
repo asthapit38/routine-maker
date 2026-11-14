@@ -7,13 +7,15 @@ A super lightweight, single-file web app for building a department's **weekly du
 
 ## Workflow
 
-The app has three steps, shown at the top.
+The app has four steps, shown at the top.
 
 1. **Upload**: drop the senior's roster (`.docx`) into the box. Earlier weeks are listed below it.
-2. **Plan 1st years**: one row per 1st-year resident, one column per day. Pick each person's station from the dropdown. Leave is shown in red, and the bottom row lists cases that still have no 1st year.
-   - **Next-day rule**: after **OT 2** (neuro) or **OT 7** (GI), the resident is put in **OT 5/LR** the next day if that day is still free (also across weeks, Sunday → Monday). If the day is taken, the cell is outlined red, and **Apply OT rule** fixes all of them.
-   - Press **Save & review**.
-3. **Review & download**: the whole table, with your 1st years in blue and the senior's schedule in grey. **Download Word (.docx)** gives back **the senior's original file**: only the 1st-year codes are added to the table, and everything else (header, leave box, staff list, signatures, formatting) is byte-for-byte unchanged.
+2. **Leave**: add who asked for leave and tick their days, or press **No leave requested**. Leave is written in the roster's format, initials then dates (e.g. Dr. Ankit Sthapit → `AS 30,1,5`), and is added to the **LEAVE** box of the downloaded file.
+3. **Plan 1st years**: one row per 1st-year resident, one column per day. Pick each person's station from the dropdown. People on leave are locked for that day, and the bottom row lists cases that still have no 1st year.
+   - **Tuesday rules** (filled in automatically when you pick the Tuesday duty, and undone if you change it):
+     - **OT 2 (neuro) on Tuesday** → Wednesday in **OT 5/LR** → Thursday on **leave**
+     - **OT 7 (GI) on Tuesday** → Wednesday in **LR** → Thursday on **leave**
+4. **Review & download**: the whole table, with your 1st years in blue. **Download Word (.docx)** gives back **the senior's original file**, with only the 1st-year codes added to the table and your leave added to the LEAVE box. Everything else is byte-for-byte unchanged.
 
 If the senior sends a **revised file** for the same week, upload it and choose *update*. Their part is replaced, and your 1st-year plan is kept.
 

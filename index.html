@@ -78,6 +78,15 @@ table.plan{border-collapse:separate;border-spacing:0;width:100%;font-size:13px}
 .plan .tag{display:block;font-size:11px;font-weight:700;margin-bottom:3px}
 .plan .tag.lv{color:var(--bad-ink)} .plan .tag.need{color:var(--bad-ink)}
 .plan tfoot td{background:#fafbfc;font-size:12px;color:var(--muted)}
+.lvrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--line2)}
+.lvrow select{min-width:220px}
+.days{display:flex;gap:6px;flex-wrap:wrap;flex:1}
+.dchip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:18px;padding:5px 10px;font-size:13px;cursor:pointer;background:#fff;user-select:none}
+.dchip input{display:none}
+.dchip.on{background:var(--bad);border-color:#e5a3a3;color:var(--bad-ink);font-weight:600}
+.lvauto{font-size:13px;color:var(--muted);margin-top:10px}
+.lvprev{margin-top:14px;padding:8px 12px;border-radius:8px;background:#f4f5f7;font-size:13px}
+.plan select:disabled{background:#fbe9e9;color:var(--bad-ink);opacity:1}
 .ro .grid td.cell{cursor:default}
 .ro .grid td.cell:hover{background:#fff}
 .steps i{font-style:normal}
@@ -217,8 +226,9 @@ dialog::backdrop{background:rgba(20,25,35,.35)}
   <h1>Duty Roster</h1>
   <nav class="steps" id="steps">
     <button data-step="home"><span>1</span> Upload</button>
-    <button data-step="plan"><span>2</span> Plan<i class="long"> 1st years</i></button>
-    <button data-step="review"><span>3</span> <i class="long">Review &amp; </i>Download</button>
+    <button data-step="leave"><span>2</span> Leave</button>
+    <button data-step="plan"><span>3</span> Plan<i class="long"> 1st years</i></button>
+    <button data-step="review"><span>4</span> <i class="long">Review &amp; </i>Download</button>
   </nav>
   <span class="grow"></span>
   <span id="saved" class="saved"></span>
@@ -284,10 +294,8 @@ dialog::backdrop{background:rgba(20,25,35,.35)}
   <p style="margin:0 0 6px"><b>Categories I schedule</b></p>
   <div class="hint" style="margin-bottom:6px">In a locked (uploaded) week, you can only add or remove people in these categories. Everything else is read-only.</div>
   <div class="cats" id="setCats"></div>
-  <p style="margin:14px 0 6px"><b>Next-day rule</b></p>
-  <div class="hint" style="margin-bottom:6px">A person from my categories who works in one of these columns must be in the target column the next day. Leave the first box empty to turn the rule off.</div>
-  <div class="row"><label for="ruleAfter">After columns</label><input type="text" id="ruleAfter" placeholder="OT 2, OT 7"></div>
-  <div class="row"><label for="ruleCol">Next day in</label><input type="text" id="ruleCol" placeholder="OT 5/LR"></div>
+  <p style="margin:14px 0 6px"><b>Tuesday rules</b></p>
+  <div class="hint" id="ruleText"></div>
   <p style="margin:14px 0 6px"><b>This week</b></p>
   <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="setLock"> Lock the senior's schedule for this week</label>
   <div class="actions"><button value="ok" class="primary">Done</button></div>
@@ -372,10 +380,10 @@ function weekLabel(w){
 }
 function sortWeeks(){ state.weeks.sort((a,b) => (b.range||'').localeCompare(a.range||'') || b.created - a.created); }
 
-/* leave parsing: "SaS: 30,1, PP: 1-4 PI: 1,2,3" -> Map code -> Set(date strings) */
+/* leave parsing: "SaS: 30,1, PP: 1-4" or "AS 30,1,5" -> Map code -> Set(date strings) */
 function parseLeave(text){
   const m = new Map();
-  const re = /([A-Za-z][A-Za-z&]*)\s*:\s*([\d\s,\-–]+)/g; let x;
+  const re = /([A-Za-z][A-Za-z&]*)\s*:?\s*(\d[\d\s,\-–]*)/g; let x;
   while ((x = re.exec(text||''))){
     const set = m.get(x[1]) || new Set();
     x[2].split(',').forEach(p => {
@@ -388,64 +396,82 @@ function parseLeave(text){
   return m;
 }
 
-/* ---- next-day rule: whoever works OT 2 (neuro) or OT 7 (GI) is due in OT 5/LR the next day ---- */
-function ruleCfg(){ const r = state.settings && state.settings.nextDay; return { from: r ? r.from : ['OT 2', 'OT 7'], to: r ? r.to : 'OT 5/LR' }; }
+/* ---- Tuesday rules ----
+   OT 2 (neuro) on TUE -> WED in OT 5/LR -> THU on leave
+   OT 7 (GI)    on TUE -> WED in LR      -> THU on leave            */
+const CHAIN = [
+  { name: 'neuro', from: 'OT 2', day: 'TUE', next: 'OT 5/LR' },
+  { name: 'GI',    from: 'OT 7', day: 'TUE', next: 'LR' }
+];
 const squash = x => lc(x).replace(/\s+/g, '');
-// "OT 5" matches "OT 5/LR" but "OT 2" never matches "OT 20"
+// "OT 5" matches "OT 5/LR" but "OT 2" never matches "OT 20"; "LR" only matches "LR"
 const colIs = (name, want) => { const a = squash(name), b = squash(want); return !!b && (a === b || (a.startsWith(b) && !/\d/.test(a[b.length]))); };
-const ruleFrom = w => w.columns.filter(c => ruleCfg().from.some(f => colIs(c.name, f)));
-function ruleTargets(w){ const t = ruleCfg().to; const ex = w.columns.filter(c => squash(c.name) === squash(t)); return ex.length ? ex : w.columns.filter(c => colIs(c.name, t)); }
-/* -> { due: per day Map(code -> reason), misses: [{code, from, to, col, reason}], spill, targets } */
-function ruleCheck(w, known = staffMap()){
-  const targets = ruleTargets(w), due = w.days.map(() => new Map()), misses = [], spill = [];
-  const from = ruleFrom(w).filter(c => !targets.includes(c));
-  if (!targets.length || !from.length) return { due, misses, spill, targets };
-  const inTarget = (d, code) => targets.some(c => ((w.cells[cellKey(d, c.id)] || {}).staff || []).includes(code));
-  w.days.forEach((day, d) => from.forEach(col => {
-    const v = w.cells[cellKey(d, col.id)]; if (!v) return;
-    (v.staff || []).filter(code => isMine(code, known)).forEach(code => {
-      const reason = `${col.name}${v.label ? ' (' + v.label + ')' : ''} on ${day.day} ${day.date}`;
-      if (d + 1 >= w.days.length){ spill.push({ code, reason }); return; }
-      due[d + 1].set(code, reason);
-      if (!inTarget(d + 1, code)) misses.push({ code, from: d, to: d + 1, col: col.id, reason });
-    });
-  }));
-  // carry-over from the previous week's last day (e.g. Sunday OT 2 -> Monday OT 5/LR)
-  const pw = prevWeek(w);
-  if (pw && w.days.length){
-    const ld = pw.days.length - 1, pday = pw.days[ld];
-    pw.columns.filter(c => ruleCfg().from.some(f => colIs(c.name, f)) && !colIs(c.name, ruleCfg().to)).forEach(col => {
-      const v = pw.cells[cellKey(ld, col.id)]; if (!v) return;
-      (v.staff || []).filter(code => isMine(code, known)).forEach(code => {
-        const reason = `${col.name}${v.label ? ' (' + v.label + ')' : ''} on ${pday.day} ${pday.date}, last week`;
-        due[0].set(code, reason);
-        if (!inTarget(0, code)) misses.push({ code, from: -1, to: 0, col: null, reason });
-      });
-    });
-  }
-  return { due, misses, spill, targets };
+const colFor = (w, name) => w.columns.find(c => squash(c.name) === squash(name)) || w.columns.find(c => colIs(c.name, name)) || null;
+
+/* leave = the senior's LEAVE box + the requests entered in the Leave step (incl. automatic ones) */
+function leaveMap(w){
+  const m = parseLeave(w.leave);
+  (w.leaveReq || []).forEach(r => { if (!r.code) return; const s = m.get(r.code) || new Set(); (r.dates || []).forEach(d => s.add(String(parseInt(d, 10)))); m.set(r.code, s); });
+  return m;
 }
-/* the week that ends the day before this one starts (weekday + date continuity) */
-function prevWeek(w){
-  if (!w.days.length) return null;
-  const first = w.days[0], fd = DAYS.indexOf(first.day), fn = parseInt(first.date, 10);
-  return state.weeks.find(x => {
-    if (x === w || !x.days.length) return false;
-    const last = x.days[x.days.length - 1], ln = parseInt(last.date, 10);
-    if (fd < 0 || DAYS.indexOf(last.day) !== (fd + 6) % 7) return false;
-    return !isNaN(fn) && !isNaN(ln) && (fn === ln + 1 || (fn === 1 && ln >= 28));
-  }) || null;
+function onLeaveFn(w){ const L = leaveMap(w); return (code, d) => { const s = L.get(code); return !!(s && w.days[d] && s.has(String(parseInt(w.days[d].date, 10)))); }; }
+/* my leave entries in the roster's format: "AS 30,1,5  MS 3" */
+function myLeaveText(w){
+  const by = new Map(), order = w.days.map(d => String(parseInt(d.date, 10)));
+  (w.leaveReq || []).forEach(r => { if (!r.code || !(r.dates || []).length) return; const s = by.get(r.code) || new Set(); r.dates.forEach(x => s.add(String(parseInt(x, 10)))); by.set(r.code, s); });
+  return [...by].map(([c, set]) => c + ' ' + [...set].sort((a, b) => order.indexOf(a) - order.indexOf(b)).join(',')).join('  ');
 }
-function applyRule(w, list){   // put each person into the (first) target column on the next day
-  const t = ruleTargets(w)[0]; if (!t) return 0; let n = 0;
-  list.forEach(({ code, to }) => { const k = cellKey(to, t.id); const c = w.cells[k] || (w.cells[k] = { label: '', staff: [], note: '' });
-    if (!c.staff.includes(code)){ c.staff.push(code); n++; } });
+function addLeave(w, code, date, auto){
+  w.leaveReq = w.leaveReq || [];
+  if (auto){ if (!w.leaveReq.some(r => r.auto && r.code === code && r.dates.includes(date))) w.leaveReq.push({ code, dates: [date], auto }); }
+  else { const r = w.leaveReq.find(x => !x.auto && x.code === code); if (r){ if (!r.dates.includes(date)) r.dates.push(date); } else w.leaveReq.push({ code, dates: [date] }); }
+}
+
+/* -> { due: per day Map(code -> {reason, col?, leave?}), misses: [{code, from, col, to, kind, target, reason}] } */
+function ruleCheck(w, known = staffMap(), onLeave = onLeaveFn(w)){
+  const due = w.days.map(() => new Map()), misses = [];
+  CHAIN.forEach(r => {
+    const from = colFor(w, r.from), next = colFor(w, r.next), d = w.days.findIndex(x => lc(x.day) === lc(r.day));
+    if (!from || d < 0) return;
+    const v = w.cells[cellKey(d, from.id)]; if (!v) return;
+    (v.staff || []).filter(c => isMine(c, known)).forEach(code => {
+      const reason = `${from.name}${v.label ? ' (' + v.label + ')' : ''} on ${w.days[d].day}`;
+      if (next && w.days[d + 1]){
+        due[d + 1].set(code, { reason, col: next });
+        if (!((w.cells[cellKey(d + 1, next.id)] || {}).staff || []).includes(code)) misses.push({ code, from: d, col: from.id, to: d + 1, kind: 'assign', target: next, reason });
+      }
+      if (w.days[d + 2]){
+        due[d + 2].set(code, { reason, leave: true });
+        if (!onLeave(code, d + 2)) misses.push({ code, from: d, col: from.id, to: d + 2, kind: 'leave', reason });
+      }
+    });
+  });
+  return { due, misses };
+}
+function missText(w, x){ const day = w.days[x.to];
+  return `Rule: ${x.code} did ${x.reason} → ` + (x.kind === 'leave' ? `should be on leave ${day.day} ${day.date}` : `should be in ${x.target.name} on ${day.day} ${day.date}`); }
+/* make the rule happen; remembers what it did so it can be undone if the Tuesday duty changes */
+function applyRule(w, list){
+  w.auto = w.auto || []; let n = 0;
+  list.forEach(x => {
+    if (x.kind === 'assign'){ setMine(w, x.code, x.to, x.target.id); w.auto.push({ code: x.code, from: x.from, d: x.to, col: x.target.name }); }
+    else { setMine(w, x.code, x.to, null); addLeave(w, x.code, w.days[x.to].date, { from: x.from, reason: x.reason }); }
+    n++;
+  });
   return n;
 }
+function undoAuto(w, code, from){
+  w.leaveReq = (w.leaveReq || []).filter(r => !(r.auto && r.code === code && r.auto.from === from));
+  (w.auto || []).filter(a => a.code === code && a.from === from).forEach(a => {
+    const c = colFor(w, a.col); const cell = c && w.cells[cellKey(a.d, c.id)];
+    if (cell && cell.staff.includes(code)) setMine(w, code, a.d, null);
+  });
+  w.auto = (w.auto || []).filter(a => !(a.code === code && a.from === from));
+}
+function ruleSummary(){ return CHAIN.map(r => `${r.from} (${r.name}) on ${r.day} → next day ${r.next} → day after on leave`).join(' · '); }
 
 /* per-day analysis: duplicates, leave conflicts, counts */
 function analyse(w){
-  const leave = parseLeave(w.leave);
   const known = staffMap();
   const perDay = w.days.map(() => new Map());   // code -> count
   const counts = new Map();
@@ -457,7 +483,7 @@ function analyse(w){
       counts.set(code, (counts.get(code)||0) + 1);
     }
   }
-  const onLeave = (code, d) => { const s = leave.get(code); return !!(s && w.days[d] && s.has(String(parseInt(w.days[d].date,10)))); };
+  const onLeave = onLeaveFn(w);
   const issues = [];
   w.days.forEach((day, d) => {
     for (const [code, n] of perDay[d]){
@@ -466,11 +492,8 @@ function analyse(w){
       if (!known.has(code)) issues.push(`${code} is not in the staff directory`);
     }
   });
-  const R = ruleCheck(w, known);
-  const tName = R.targets[0] ? R.targets[0].name : '';
-  R.misses.forEach(x => issues.unshift(`Rule: ${x.code} did ${x.reason} → should be in ${tName} on ${w.days[x.to].day} ${w.days[x.to].date}`));
-  if (!state.weeks.some(x => x !== w && prevWeek(x) === w))
-    R.spill.forEach(x => issues.push(`Rule: ${x.code} did ${x.reason} → put in ${tName} on the first day of next week`));
+  const R = ruleCheck(w, known, onLeave);
+  R.misses.slice().reverse().forEach(x => issues.unshift(missText(w, x)));
   const missKey = new Set(R.misses.map(x => `${x.from}|${x.col}|${x.code}`));
   return { perDay, counts, onLeave, known, rule: R, missKey, issues: [...new Set(issues)] };
 }
@@ -482,6 +505,7 @@ function render(){
   if (!w && view !== 'home') view = 'home';
   document.querySelectorAll('#steps [data-step]').forEach(b => { b.classList.toggle('on', b.dataset.step === view || (view === 'edit' && b.dataset.step === 'review')); b.disabled = b.dataset.step !== 'home' && !w; });
   if (view === 'home') return renderHome();
+  if (view === 'leave') return renderLeave(w);
   if (view === 'plan') return renderPlan(w);
   if (view === 'review') return renderReview(w);
   return renderEdit(w);
@@ -581,18 +605,19 @@ function plannerHtml(w, A){
       const at = where[d].get(s.code) || [];
       total += at.length;
       if (A.onLeave(s.code, d)) return `<td class="lv" title="On leave">LEAVE${at.length ? '<br>' + esc(at.join(', ')) : ''}</td>`;
-      const why = A.rule.due[d].get(s.code), tgt = A.rule.targets[0];
-      if (why && !A.rule.targets.some(t => at.includes(t.name))){
+      const why = A.rule.due[d].get(s.code);
+      if (why && why.col && !at.includes(why.col.name)){
         if (!at.length) free[d]++;
-        return `<td class="need" title="Did ${esc(why)}">needs ${esc(tgt.name)}${at.length ? '<br><span class="hint">now: ' + esc(at.join(', ')) + '</span>' : ''}</td>`;
+        return `<td class="need" title="Did ${esc(why.reason)}">needs ${esc(why.col.name)}${at.length ? '<br><span class="hint">now: ' + esc(at.join(', ')) + '</span>' : ''}</td>`;
       }
+      if (why && why.leave && !A.onLeave(s.code, d)) return `<td class="need" title="Did ${esc(why.reason)}">needs leave</td>`;
       if (!at.length){ free[d]++; return '<td class="free">free</td>'; }
       return `<td class="${at.length > 1 ? 'many' : ''}">${esc(at.join(', '))}</td>`;
     }).join('');
     return `<tr><td class="who ${highlight===s.code?'on':''}" data-hl="${esc(s.code)}" title="${esc(s.name)}"><b>${esc(s.code)}</b> <span class="hint">${esc(s.name)}</span></td>${tds}<td><b>${total}</b></td></tr>`;
   }).join('');
-  const nm = A.rule.misses.length, rf = ruleFrom(w).map(c => c.name);
-  const ruleLine = A.rule.targets.length && rf.length ? `<div class="rulebar"><span class="hint">Rule: after <b>${esc(rf.join(' / '))}</b> → next day in <b>${esc(A.rule.targets[0].name)}</b></span>${nm ? `<button class="primary" id="applyRule">Apply rule (${nm} missing)</button>` : '<span class="hint">✓ all followed</span>'}</div>` : '';
+  const nm = A.rule.misses.length;
+  const ruleLine = `<div class="rulebar"><span class="hint">Rules: ${esc(ruleSummary())}</span>${nm ? `<button class="primary" id="applyRule">Apply rules (${nm} missing)</button>` : '<span class="hint">✓ all followed</span>'}</div>`;
   return `<div class="panel planner-panel noprint" style="margin-top:16px"><h3>My planner: ${esc(myCatsLabel())} <span class="hint">— where each person is, day by day</span></h3>${ruleLine}
     <div style="overflow:auto"><table class="planner"><thead><tr><th style="text-align:left">Person</th>${w.days.map(d => `<th>${esc(d.day)} ${esc(d.date)}</th>`).join('')}<th>Total</th></tr></thead>
     <tbody>${rows}</tbody><tfoot><tr><td style="text-align:left">Free</td>${free.map(n => `<td>${n}</td>`).join('')}<td></td></tr></tfoot></table></div></div>`;
@@ -646,8 +671,8 @@ $('#main').addEventListener('click', e => {
     const inputs = document.querySelectorAll('thead input[data-col]'); const last = inputs[inputs.length-1]; last.focus(); last.select();
     return;
   }
-  if (e.target.id === 'applyRule'){
-    const n = applyRule(w, ruleCheck(w).misses); save(); render(); flash(`Added ${n} to ${ruleTargets(w)[0].name}`); return;
+  if (e.target.id === 'applyRule' && view === 'edit'){
+    const n = applyRule(w, ruleCheck(w).misses); save(); render(); flash(`Applied ${n} rule change${n === 1 ? '' : 's'}`); return;
   }
   const hl = e.target.closest('[data-hl]');
   if (hl){ highlight = highlight === hl.dataset.hl ? null : hl.dataset.hl; render(); }
@@ -714,10 +739,10 @@ function drawPicker(){
   let h = '';
   for (const [cat, list] of groups){
     h += `<div class="cat">${esc(cat)}</div>` + list.map(s => {
-      const why = A.rule.due[d].get(s.code), here = A.rule.targets.some(t => t.id === colId);
+      const why = A.rule.due[d].get(s.code), here = !!(why && why.col && why.col.id === colId);
       const cls = [chosen.has(s.code) ? 'on' : '', A.onLeave(s.code, d) ? 'away' : busy.has(s.code) ? 'busy' : '', why && here ? 'due' : ''].join(' ');
       const tip = s.name + (A.onLeave(s.code, d) ? ' — ON LEAVE' : '') + (busy.has(s.code) ? ' — also in ' + busy.get(s.code) : '')
-        + (why ? (here ? ' — DUE HERE (did ' + why + ')' : ' — due in ' + A.rule.targets[0].name + ' today (did ' + why + ')') : '');
+        + (why ? (here ? ' — DUE HERE (did ' + why.reason + ')' : why.leave ? ' — should be on leave today (did ' + why.reason + ')' : ' — due in ' + why.col.name + ' today (did ' + why.reason + ')') : '');
       return `<button type="button" class="${cls}" data-pick="${esc(s.code)}" title="${esc(tip)}">${esc(s.code)}</button>`;
     }).join('');
   }
@@ -754,8 +779,7 @@ dlgCell.addEventListener('close', () => {
   // next-day rule: offer to place them in OT 5 tomorrow
   const todo = ruleCheck(w).misses.filter(x => x.from === sel.dayIdx && x.col === sel.colId);
   if (todo.length){
-    const t = ruleTargets(w)[0], day = w.days[todo[0].to];
-    toast(`${esc(todo.map(x => x.code).join(', '))} in ${esc(todo[0].reason)} → add to <b>${esc(t.name)}</b> on ${esc(day.day)} ${esc(day.date)}?`,
+    toast(`${esc([...new Set(todo.map(x => x.code))].join(', '))} did ${esc(todo[0].reason)} → apply the Tuesday rule (${esc(todo.map(x => x.kind === 'leave' ? 'leave ' + w.days[x.to].day : x.target.name + ' ' + w.days[x.to].day).join(', '))})?`,
       [['Add', () => { applyRule(w, todo); save(); render(); }], ['Not now', null, 'link']]);
   }
 });
@@ -831,17 +855,13 @@ function openSettings(){
   const cats = allCats(), m = myCats(), w = week();
   $('#setCats').innerHTML = cats.length ? cats.map(c => `<label><input type="checkbox" value="${esc(c)}" ${m.has(lc(c)) ? 'checked' : ''}> ${esc(c)}</label>`).join('') : '<span class="hint">No categories yet: add staff first.</span>';
   $('#setLock').checked = locked(w); $('#setLock').disabled = !w;
-  const r = ruleCfg(); $('#ruleAfter').value = r.from.join(', '); $('#ruleCol').value = r.to;
+  $('#ruleText').textContent = ruleSummary();
   $('#dlgSettings').showModal();
 }
 $('#setCats').addEventListener('change', () => {
   state.settings = { ...(state.settings || {}), myCats: [...document.querySelectorAll('#setCats input:checked')].map(i => i.value) };
   save(); render();
 });
-['#ruleAfter', '#ruleCol'].forEach(id => $(id).addEventListener('change', () => {
-  state.settings = { ...(state.settings || {}), nextDay: { from: $('#ruleAfter').value.split(/[,;]+/).map(x => x.trim()).filter(Boolean), to: $('#ruleCol').value.trim() } };
-  save(); render();
-}));
 $('#setLock').addEventListener('change', e => {
   const w = week(); if (!w) return;
   if (!e.target.checked && !confirm("Unlock this week? You (or anyone using this device) will be able to change the senior's schedule.")){ e.target.checked = true; return; }
@@ -939,7 +959,7 @@ function wordHtml(w){
 <body><div class="Section1">
 <table style="width:100%;border-collapse:collapse"><tr>
 <td style="width:65%;text-align:center;vertical-align:top"><p><b>${esc(w.dept)}</b></p><p><b>${esc(w.inst)}</b></p><p><b>${esc(w.title)}</b></p><p><b>${esc(w.range)}</b></p></td>
-<td style="width:35%;border:1px solid #000;padding:4px;vertical-align:top"><p><b><u>LEAVE:</u></b></p><p>${nl(w.leave)}</p></td></tr></table>
+<td style="width:35%;border:1px solid #000;padding:4px;vertical-align:top"><p><b><u>LEAVE:</u></b></p><p>${nl([w.leave, myLeaveText(w)].filter(Boolean).join('  '))}</p></td></tr></table>
 <p style="margin:4pt 0"><b>${esc(w.conf)}</b></p>
 ${g}
 ${staff}
@@ -956,7 +976,7 @@ async function handleFile(f){
     if (/\.docx$/i.test(f.name)){
       const buf = await f.arrayBuffer();
       const d = await parseDocx(buf); d.week.locked = true;
-      await importWeek(d, f.name, buf); go('plan');
+      await importWeek(d, f.name, buf); go('leave');
     } else if (/\.json$/i.test(f.name) || f.type.includes('json')) { await importJson(JSON.parse(await f.text())); }
     else alert('Please choose the roster Word file (.docx).');
   } catch(err){ console.error(err); alert('Could not read that file: ' + err.message); }
@@ -1004,9 +1024,8 @@ function carryMine(oldW, newW){
     const nk = cellKey(nd, nc.id); const cell = newW.cells[nk] || (newW.cells[nk] = { label: '', staff: [], note: '' });
     cell.staff = [...new Set([...(cell.staff || []), ...mine])];
   }
-  const have = new Set(String(newW.leave || '').split('\n').map(s => s.trim()));
-  const extra = String(oldW.leave || '').split('\n').map(s => s.trim()).filter(s => s && !have.has(s));
-  if (extra.length) newW.leave = [newW.leave, ...extra].filter(Boolean).join('\n');
+  newW.leaveReq = JSON.parse(JSON.stringify(oldW.leaveReq || []));
+  newW.auto = JSON.parse(JSON.stringify(oldW.auto || []));
   return lost;
 }
 async function importJson(j){
@@ -1183,11 +1202,50 @@ $('#main').addEventListener('click', e => {
   const o = e.target.closest('[data-open]'); if (o){ state.current = o.dataset.open; save(); go('plan'); }
 });
 
-/* step 2: person × day; each cell picks the station for that day */
+/* step 2: leave requests */
+function renderLeave(w){
+  const mine = state.staff.filter(s => myCats().has(lc(s.category)));
+  const reqs = (w.leaveReq || []).map((r, i) => ({ r, i })).filter(x => !x.r.auto);
+  const autos = (w.leaveReq || []).filter(r => r.auto);
+  const rows = reqs.map(({ r, i }) => `<div class="lvrow">
+      <select data-lv="${i}"><option value="">Choose resident…</option>${mine.map(s => `<option value="${esc(s.code)}" ${s.code === r.code ? 'selected' : ''}>${esc(s.code)} — ${esc(s.name)}</option>`).join('')}</select>
+      <div class="days">${w.days.map(d => { const on = (r.dates || []).includes(d.date);
+        return `<label class="dchip ${on ? 'on' : ''}"><input type="checkbox" data-lvd="${i}" value="${esc(d.date)}" ${on ? 'checked' : ''}>${esc(d.day)} ${esc(d.date)}</label>`; }).join('')}</div>
+      <button class="link danger" data-lvdel="${i}" title="Remove">✕</button></div>`).join('');
+  const txt = myLeaveText(w), filled = reqs.some(x => x.r.code && x.r.dates.length);
+  $('#main').innerHTML = `<div class="sheet">
+    <div class="phead"><div><h2>Leave requests</h2><div class="hint">${esc(w.range)} · who asked for leave this week, and on which days</div></div>
+      <div class="acts">${filled ? '<button class="primary" id="leaveNext">Continue to planner →</button>' : '<button class="primary" id="leaveNext">No leave requested →</button>'}</div></div>
+    ${w.leave ? `<div class="leaveline"><b>Already on the roster:</b> ${esc(w.leave)}</div>` : ''}
+    ${rows || '<p class="hint">No leave added yet.</p>'}
+    <p><button id="addLeave">+ Add leave</button></p>
+    ${autos.length ? `<div class="lvauto">Added automatically by the Tuesday rules: ${autos.map(r => `<b>${esc(r.code)}</b> ${esc(r.dates.join(','))} (after ${esc(r.auto.reason)})`).join(' · ')}</div>` : ''}
+    ${txt ? `<div class="lvprev">Will be added to the LEAVE box as: <b>${esc(txt)}</b></div>` : ''}
+  </div>`;
+}
+$('#main').addEventListener('change', e => {
+  const t = e.target, w = week(); if (!w || view !== 'leave') return;
+  if (t.matches('[data-lv]')){ const r = w.leaveReq[+t.dataset.lv]; r.code = t.value; }
+  else if (t.matches('[data-lvd]')){
+    const r = w.leaveReq[+t.dataset.lvd], dt = t.value;
+    r.dates = t.checked ? [...new Set([...(r.dates || []), dt])] : (r.dates || []).filter(x => x !== dt);
+    // someone on leave can't work that day: clear their duty
+    if (t.checked && r.code){ const d = w.days.findIndex(x => x.date === dt); if (d >= 0) setMine(w, r.code, d, null); }
+  } else return;
+  save(); render();
+});
+$('#main').addEventListener('click', e => {
+  const w = week(); if (!w || view !== 'leave') return;
+  if (e.target.id === 'addLeave'){ (w.leaveReq = w.leaveReq || []).push({ code: '', dates: [] }); save(); render(); }
+  const del = e.target.closest('[data-lvdel]'); if (del){ w.leaveReq.splice(+del.dataset.lvdel, 1); save(); render(); }
+  if (e.target.id === 'leaveNext'){ w.leaveReq = (w.leaveReq || []).filter(r => r.auto || (r.code && r.dates.length)); save(); go('plan'); }
+});
+
+/* step 3: person × day; each cell picks the station for that day */
 function renderPlan(w){
   const A = analyse(w), m = A.known;
   const mine = state.staff.filter(s => myCats().has(lc(s.category)));
-  const R = A.rule, tgt = R.targets[0];
+  const R = A.rule;
   const where = w.days.map(() => new Map());   // day -> code -> [colId]
   for (const [k, v] of Object.entries(w.cells)){ const [d, c] = k.split('|'); if (!w.days[d]) continue;
     (v.staff || []).forEach(code => { const x = where[d]; x.set(code, [...(x.get(code) || []), c]); }); }
@@ -1198,22 +1256,24 @@ function renderPlan(w){
   const open = w.days.map((day, d) => w.columns.filter(c => { const v = w.cells[cellKey(d, c.id)]; return v && v.label && !/^x+$/i.test(v.label) && !(v.staff || []).some(x => isMine(x, m)); }).map(c => c.name));
   const rows = mine.map(s => `<tr><td class="who"><b>${esc(s.code)}</b> <span class="hint">${esc(s.name)}</span></td>${w.days.map((day, d) => {
       const at = (where[d].get(s.code) || []), cur = at[0] || '', lv = A.onLeave(s.code, d);
-      const why = R.due[d].get(s.code), need = why && !R.targets.some(t => at.includes(t.id));
+      const why = R.due[d].get(s.code);
+      const need = why && (why.col ? !at.includes(why.col.id) : !lv);
+      const auto = (w.auto || []).some(a => a.code === s.code && a.d === d) || (lv && (w.leaveReq || []).some(r => r.auto && r.code === s.code && r.dates.includes(day.date)));
       const extra = at.slice(1).map(id => (w.columns.find(c => c.id === id) || {}).name).filter(Boolean);
-      return `<td class="${lv ? 'lv' : ''} ${need ? 'need' : ''} ${cur ? 'set' : ''}" ${why ? `title="Did ${esc(why)}"` : ''}>${lv ? '<span class="tag lv">LEAVE</span>' : ''}${need ? `<span class="tag need">needs ${esc(tgt.name)}</span>` : ''}
-        <select data-p="${esc(s.code)}" data-d="${d}"><option value="">—</option>${optsFor(d, s.code).map(o => `<option value="${o.id}" ${o.id === cur ? 'selected' : ''}>${esc(o.text)}</option>`).join('')}</select>
+      return `<td class="${lv ? 'lv' : ''} ${need ? 'need' : ''} ${cur ? 'set' : ''}" ${why ? `title="Rule: did ${esc(why.reason)}"` : ''}>${lv ? `<span class="tag lv">LEAVE${auto ? ' · auto' : ''}</span>` : ''}${need ? `<span class="tag need">${why.col ? 'needs ' + esc(why.col.name) : 'needs leave'}</span>` : ''}${!lv && auto ? '<span class="tag" style="color:var(--accent)">auto</span>' : ''}
+        <select data-p="${esc(s.code)}" data-d="${d}" ${lv && !cur ? 'disabled title="On leave (change it in the Leave step)"' : ''}><option value="">${lv ? 'on leave' : '—'}</option>${optsFor(d, s.code).map(o => `<option value="${o.id}" ${o.id === cur ? 'selected' : ''}>${esc(o.text)}</option>`).join('')}</select>
         ${extra.length ? `<span class="hint">+ ${esc(extra.join(', '))}</span>` : ''}</td>`; }).join('')}
       <td><b>${w.days.reduce((n, _, d) => n + (where[d].get(s.code) || []).length, 0)}</b></td></tr>`).join('');
   const nm = R.misses.length;
   $('#main').innerHTML = `<div class="sheet">
     <div class="phead"><div><h2>Plan 1st-year residents</h2><div class="hint">${esc(w.range)}${locked(w) ? " · senior's schedule is locked 🔒" : ''}</div></div>
-      <div class="acts">${nm ? `<button id="applyRule">Apply OT rule (${nm})</button>` : ''}<button class="primary" id="savePlan">Save &amp; review →</button></div></div>
-    ${w.leave ? `<div class="leaveline"><b>Leave:</b> ${esc(w.leave)}</div>` : ''}
+      <div class="acts">${nm ? `<button id="applyRule">Apply Tuesday rules (${nm})</button>` : ''}<button class="primary" id="savePlan">Save &amp; review →</button></div></div>
+    ${w.leave || myLeaveText(w) ? `<div class="leaveline"><b>Leave:</b> ${esc([w.leave, myLeaveText(w)].filter(Boolean).join('  '))}</div>` : ''}
     ${mine.length ? `<div class="planwrap"><table class="plan"><thead><tr><th class="who">Resident</th>${w.days.map(d => `<th>${esc(d.day)} ${esc(d.date)}</th>`).join('')}<th>Total</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot><tr><td class="who" style="background:#fafbfc">Cases with no 1st year</td>${open.map(o => `<td title="${esc(o.join(', '))}">${o.length ? esc(o.join(', ')) : '✓'}</td>`).join('')}<td></td></tr></tfoot></table></div>`
       : `<p>No 1st-year residents found. Open <b>⋯ → Settings &amp; locking</b> and tick the category you schedule.</p>`}
-    <p class="hint" style="margin-top:10px">Pick where each resident works each day. ${tgt && ruleFrom(w).length ? `Rule: after ${esc(ruleFrom(w).map(c => c.name).join(' / '))} → next day ${esc(tgt.name)} (filled in for you when that day is free).` : ''} Saved automatically.</p>
+    <p class="hint" style="margin-top:10px">Pick where each resident works each day; it saves automatically. Tuesday rules are filled in for you: ${esc(ruleSummary())}.</p>
   </div>`;
 }
 function setMine(w, code, d, colId){
@@ -1228,15 +1288,18 @@ $('#main').addEventListener('change', e => {
   const t = e.target; if (!t.matches('select[data-p]')) return;
   const w = week(), code = t.dataset.p, d = +t.dataset.d;
   setMine(w, code, d, t.value || null);
-  // next-day rule: if they are now due in OT 5/LR tomorrow and tomorrow is still free, fill it in
-  const miss = ruleCheck(w).misses.find(x => x.code === code && x.from === d);
-  if (miss){
-    const busyNext = Object.entries(w.cells).some(([k, v]) => +k.split('|')[0] === miss.to && (v.staff || []).includes(code));
-    if (!busyNext){ applyRule(w, [miss]); flash(`${code} → ${ruleTargets(w)[0].name} on ${w.days[miss.to].day} (rule)`); }
+  undoAuto(w, code, d);   // the Tuesday duty changed: take back what the rule did for it
+  const todo = ruleCheck(w).misses.filter(x => x.code === code && x.from === d);
+  if (todo.length){
+    applyRule(w, todo);
+    flash(`${code}: ` + todo.map(x => x.kind === 'leave' ? `leave ${w.days[x.to].day}` : `${x.target.name} ${w.days[x.to].day}`).join(', ') + ' (Tuesday rule)');
   }
   save(); const y = scrollY, x = ($('.planwrap') || {}).scrollLeft; render(); scrollTo(0, y); if ($('.planwrap')) $('.planwrap').scrollLeft = x;
 });
-$('#main').addEventListener('click', e => { if (e.target.id === 'savePlan'){ save(); go('review'); } });
+$('#main').addEventListener('click', e => {
+  if (e.target.id === 'savePlan'){ save(); go('review'); }
+  if (e.target.id === 'applyRule' && view === 'plan'){ const w = week(); applyRule(w, ruleCheck(w).misses); save(); render(); }
+});
 
 /* step 3: whole table, read-only, then download */
 function renderReview(w){
@@ -1266,6 +1329,7 @@ function renderReview(w){
   $('#main').innerHTML = `<div class="sheet ro">
     <div class="phead"><div><h2>${esc(w.title || 'Duty roster')} · ${esc(w.range)}</h2><div class="hint"><span class="chip mine">AB</span> 1st year (yours) · <span class="chip">AB</span> senior's schedule</div></div>
       <div class="acts noprint"><button id="backPlan">← Back to plan</button><button class="primary" id="dlDocx">⬇ Download ${w.hasFile ? 'Word (.docx)' : 'Word'}</button></div></div>
+    ${w.leave || myLeaveText(w) ? `<div class="leaveline"><b>LEAVE:</b> ${esc(w.leave)}${myLeaveText(w) ? `${w.leave ? '  ' : ''}<b>${esc(myLeaveText(w))}</b>` : ''}</div>` : ''}
     ${issues.length ? `<details class="issues noprint"><summary>${issues.length} thing${issues.length > 1 ? 's' : ''} to check</summary><ul>${issues.map(i => `<li>${esc(i)}</li>`).join('')}</ul></details>` : ''}
     ${g}
     ${w.hasFile ? '' : `<p class="hint noprint">This week has no original Word file stored, so the download uses the app's own layout. Upload the senior's .docx again (choose “update”) to download in the original format.</p>`}
@@ -1326,6 +1390,23 @@ async function buildDocx(w, buf){
       edits.push({ s: sp.s, e: sp.e, out });
     });
   });
+  // LEAVE box (a text box; Word keeps two copies of it, both get the text)
+  const lt = myLeaveText(w);
+  if (lt){
+    const W14 = /<w:txbxContent\b[^>]*>[\s\S]*?<\/w:txbxContent>/g; let mt, found = 0;
+    while ((mt = W14.exec(xml))){
+      const sS = mt.index, sE = mt.index + mt[0].length;
+      if (!/LEAVE/i.test(mt[0].replace(/<[^>]+>/g, '')) || edits.some(x => x.s < sE && sS < x.e)) continue;
+      const frag = new DOMParser().parseFromString(rootOpen + mt[0] + '</w:document>', 'application/xml');
+      const box = frag.documentElement.firstElementChild; if (!box) continue;
+      if (addLeaveText(frag, W, box, lt)){
+        let out = new XMLSerializer().serializeToString(box);
+        out = out.replace(/^<w:txbxContent\b[^>]*>/, tag => tag.replace(/\s+xmlns(:\w+)?="[^"]*"/g, d => rootOpen.includes(d.trim()) ? '' : d));
+        edits.push({ s: sS, e: sE, out }); found++;
+      }
+    }
+    if (!found) console.warn('LEAVE box not found; leave not written');
+  }
   let res = xml;
   edits.sort((a, b) => b.s - a.s).forEach(x => { res = res.slice(0, x.s) + x.out + res.slice(x.e); });
   return zipReplace(buf, 'word/document.xml', res);
@@ -1345,6 +1426,23 @@ function tableCellSpans(xml, nth){
     else if (tag === 'tc' && row){ if (!close) cs = x.index; else { row.push({ s: cs, e: re.lastIndex }); } }
   }
   return rows;
+}
+/* append "AS 30,1,5" to the leave line of the LEAVE box */
+function addLeaveText(doc, W, box, text){
+  const kids = (el, n) => [...el.children].filter(c => c.localName === n && c.namespaceURI === W);
+  const pText = p => [...p.getElementsByTagNameNS(W, 't')].map(t => t.textContent).join('');
+  const ps = [...box.getElementsByTagNameNS(W, 'p')];
+  const li = ps.findIndex(p => /^\s*leave\s*:?/i.test(pText(p))); if (li < 0) return false;
+  const after = ps.slice(li + 1);
+  let target = [...after].reverse().find(p => pText(p).trim()), sep = '  ';
+  if (!target){ target = after.length ? after[after.length - 1] : ps[li]; sep = target === ps[li] ? ' ' : ''; }
+  const runs = kids(target, 'r'); const lastR = runs[runs.length - 1] || [...ps[li].getElementsByTagNameNS(W, 'r')].pop();
+  const r = doc.createElementNS(W, 'w:r');
+  const pr = lastR && kids(lastR, 'rPr')[0];
+  if (pr){ const c = pr.cloneNode(true); if (target === ps[li] || !runs.length) kids(c, 'u').forEach(u => u.remove()); r.appendChild(c); }
+  const t = doc.createElementNS(W, 'w:t'); t.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve'); t.textContent = sep + text;
+  r.appendChild(t); target.appendChild(r);
+  return true;
 }
 function writeMine(doc, W, tc, want, m){
   const kids = (el, n) => [...el.children].filter(c => c.localName === n && c.namespaceURI === W);

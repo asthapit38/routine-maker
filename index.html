@@ -86,6 +86,9 @@ table.plan{border-collapse:separate;border-spacing:0;width:100%;font-size:13px}
 .dchip.on{background:var(--bad);border-color:#e5a3a3;color:var(--bad-ink);font-weight:600}
 .lvauto{font-size:13px;color:var(--muted);margin-top:10px}
 .lvprev{margin-top:14px;padding:8px 12px;border-radius:8px;background:#f4f5f7;font-size:13px}
+.plan th.wk{background:#ece8f7}
+.plan td.wk:not(.lv){background:#faf8fe}
+.plan select.off:disabled{background:#efeaf8;color:#6b4bb8}
 .plan select:disabled{background:#fbe9e9;color:var(--bad-ink);opacity:1}
 .ro .grid td.cell{cursor:default}
 .ro .grid td.cell:hover{background:#fff}
@@ -471,6 +474,46 @@ function undoAuto(w, code, from){
   });
   w.auto = (w.auto || []).filter(a => !(a.code === code && a.from === from));
 }
+/* ---- validations ---- */
+const WEEKEND = ['FRI', 'SAT', 'SUN'];
+const isWkend = day => !!day && WEEKEND.includes(String(day.day).toUpperCase());
+/* the week that ends the day before this one starts (weekday + date continuity) */
+function prevWeek(w){
+  if (!w.days.length) return null;
+  const first = w.days[0], fd = DAYS.indexOf(String(first.day).toUpperCase()), fn = parseInt(first.date, 10);
+  return state.weeks.find(x => {
+    if (x === w || !x.days.length) return false;
+    const last = x.days[x.days.length - 1], ln = parseInt(last.date, 10);
+    if (fd < 0 || DAYS.indexOf(String(last.day).toUpperCase()) !== (fd + 6) % 7) return false;
+    return !isNaN(fn) && !isNaN(ln) && (fn === ln + 1 || (fn === 1 && ln >= 28));
+  }) || null;
+}
+/* 1st years who worked any FRI/SAT/SUN in the previous week -> Map(code -> "FRI 4, SAT 5") */
+function lastWeekend(w, known = staffMap()){
+  const pw = prevWeek(w), out = new Map(); if (!pw) return out;
+  for (const [k, v] of Object.entries(pw.cells)){
+    const d = +k.split('|')[0], day = pw.days[d]; if (!isWkend(day)) continue;
+    (v.staff || []).filter(c => isMine(c, known)).forEach(c => { const l = `${day.day} ${day.date}`; const cur = out.get(c); if (!cur || !cur.includes(l)) out.set(c, cur ? cur + ', ' + l : l); });
+  }
+  return out;
+}
+function neuroDays(w, code){ const n = colFor(w, CHAIN[0].from); return n ? w.days.map((_, d) => d).filter(d => ((w.cells[cellKey(d, n.id)] || {}).staff || []).includes(code)) : []; }
+/* why this pick is not allowed (or null) */
+function blockReason(w, code, d, colId, lastWk = lastWeekend(w)){
+  if (!colId) return null;
+  const col = w.columns.find(c => c.id === colId), neuro = colFor(w, CHAIN[0].from);
+  if (neuro && colId === neuro.id){
+    const other = neuroDays(w, code).filter(x => x !== d);
+    if (other.length) return `${code} already has a neuro OT this week (${w.days[other[0]].day} ${w.days[other[0]].date}). Only one neuro OT per week.`;
+  }
+  if (lastWk.has(code)){
+    if (isWkend(w.days[d])) return `${code} worked last weekend (${lastWk.get(code)}), so can't work ${w.days[d].day} this weekend.`;
+    const r = CHAIN.find(x => col && colIs(col.name, x.from) && colFor(w, x.from) === col);
+    if (r && isWkend(w.days[d + 1])) return `${code} worked last weekend (${lastWk.get(code)}). ${col.name} on ${w.days[d].day} would put them in ${r.next} on ${w.days[d + 1].day}, which is a weekend day.`;
+  }
+  return null;
+}
+
 function ruleSummary(){ return CHAIN.map(r => `${r.from} (${r.name}) → next day ${r.next} → day after leave`).join(' · '); }
 
 /* per-day analysis: duplicates, leave conflicts, counts */
@@ -498,6 +541,13 @@ function analyse(w){
   const R = ruleCheck(w, known, onLeave);
   R.misses.slice().reverse().forEach(x => issues.unshift(missText(w, x)));
   R.spill.forEach(t => issues.push('Rule: ' + t));
+  state.staff.filter(x => myCats().has(lc(x.category))).forEach(x => {
+    const nd = neuroDays(w, x.code);
+    if (nd.length > 1) issues.unshift(`${x.code} has ${nd.length} neuro OTs this week (${nd.map(d => w.days[d].day).join(', ')}): only one allowed`);
+  });
+  const lw = lastWeekend(w, known);
+  w.days.forEach((day, d) => { if (!isWkend(day)) return;
+    for (const code of perDay[d].keys()) if (lw.has(code)) issues.unshift(`${code} worked last weekend (${lw.get(code)}) but is working ${day.day} ${day.date}`); });
   const missKey = new Set(R.misses.map(x => `${x.from}|${x.col}|${x.code}`));
   return { perDay, counts, onLeave, known, rule: R, missKey, issues: [...new Set(issues)] };
 }
@@ -549,7 +599,7 @@ function renderEdit(w){
   });
   h += `<th class="noprint" style="min-width:0">${locked(w) ? '' : '<button class="addcol link" id="addCol" title="Add column">+ column</button>'}</th></tr></thead><tbody>`;
   w.days.forEach((day, d) => {
-    const wk = day.day === 'SAT' || day.day === 'SUN';
+    const wk = isWkend(day);
     h += `<tr class="${wk?'wkend':''}"><th class="day"><input class="d" data-dd="${d}" value="${esc(day.date)}" placeholder="—" ${RO(w)}><br><input data-dw="${d}" value="${esc(day.day)}" ${RO(w)}></th>`;
     w.columns.forEach(c => {
       const v = w.cells[cellKey(d, c.id)];
@@ -1253,19 +1303,23 @@ function renderPlan(w){
   const where = w.days.map(() => new Map());   // day -> code -> [colId]
   for (const [k, v] of Object.entries(w.cells)){ const [d, c] = k.split('|'); if (!w.days[d]) continue;
     (v.staff || []).forEach(code => { const x = where[d]; x.set(code, [...(x.get(code) || []), c]); }); }
+  const lastWk = lastWeekend(w, m);
   const optsFor = (d, self) => w.columns.map(c => {
     const v = w.cells[cellKey(d, c.id)] || {}; const others = (v.staff || []).filter(x => x !== self && isMine(x, m));
-    return { id: c.id, text: c.name + (v.label ? ' · ' + v.label : '') + (others.length ? '  (' + others.join(', ') + ')' : '') };
+    const no = blockReason(w, self, d, c.id, lastWk);
+    return { id: c.id, no, text: c.name + (v.label ? ' · ' + v.label : '') + (others.length ? '  (' + others.join(', ') + ')' : '') + (no ? (/neuro OT this week/.test(no) ? ' — neuro done' : ' — weekend rule') : '') };
   });
   const open = w.days.map((day, d) => w.columns.filter(c => { const v = w.cells[cellKey(d, c.id)]; return v && v.label && !/^x+$/i.test(v.label) && !(v.staff || []).some(x => isMine(x, m)); }).map(c => c.name));
-  const rows = mine.map(s => `<tr><td class="who"><b>${esc(s.code)}</b> <span class="hint">${esc(s.name)}</span></td>${w.days.map((day, d) => {
+  const rows = mine.map(s => `<tr><td class="who"><b>${esc(s.code)}</b> <span class="hint">${esc(s.name)}</span>${lastWk.has(s.code) ? `<span class="tag" style="color:#6b4bb8" title="Worked ${esc(lastWk.get(s.code))} last week">off this weekend</span>` : ''}</td>${w.days.map((day, d) => {
       const at = (where[d].get(s.code) || []), cur = at[0] || '', lv = A.onLeave(s.code, d);
       const why = R.due[d].get(s.code);
       const need = why && (why.col ? !at.includes(why.col.id) : !lv);
       const auto = (w.auto || []).some(a => a.code === s.code && a.d === d) || (lv && (w.leaveReq || []).some(r => r.auto && r.code === s.code && r.dates.includes(day.date)));
       const extra = at.slice(1).map(id => (w.columns.find(c => c.id === id) || {}).name).filter(Boolean);
-      return `<td class="${lv ? 'lv' : ''} ${need ? 'need' : ''} ${cur ? 'set' : ''}" ${why ? `title="Rule: did ${esc(why.reason)}"` : ''}>${lv ? `<span class="tag lv">LEAVE${auto ? ' · auto' : ''}</span>` : ''}${need ? `<span class="tag need">${why.col ? 'needs ' + esc(why.col.name) : 'needs leave'}</span>` : ''}${!lv && auto ? '<span class="tag" style="color:var(--accent)">auto</span>' : ''}
-        <select data-p="${esc(s.code)}" data-d="${d}" ${lv && !cur ? 'disabled title="On leave (change it in the Leave step)"' : ''}><option value="">${lv ? 'on leave' : '—'}</option>${optsFor(d, s.code).map(o => `<option value="${o.id}" ${o.id === cur ? 'selected' : ''}>${esc(o.text)}</option>`).join('')}</select>
+      const wkOff = lastWk.has(s.code) && isWkend(day);
+      return `<td class="${lv ? 'lv' : ''} ${need ? 'need' : ''} ${cur ? 'set' : ''} ${isWkend(day) ? 'wk' : ''} ${wkOff && cur ? 'need' : ''}" ${why ? `title="Rule: did ${esc(why.reason)}"` : ''}>${lv ? `<span class="tag lv">LEAVE${auto ? ' · auto' : ''}</span>` : ''}${need ? `<span class="tag need">${why.col ? 'needs ' + esc(why.col.name) : 'needs leave'}</span>` : ''}${!lv && auto ? '<span class="tag" style="color:var(--accent)">auto</span>' : ''}
+        ${wkOff && cur ? '<span class="tag need">worked last weekend</span>' : ''}
+        <select class="${wkOff && !lv ? 'off' : ''}" data-p="${esc(s.code)}" data-d="${d}" ${lv && !cur ? 'disabled title="On leave (change it in the Leave step)"' : wkOff && !cur ? `disabled title="Worked last weekend (${esc(lastWk.get(s.code))})"` : ''}><option value="">${lv ? 'on leave' : wkOff ? 'off (weekend)' : '—'}</option>${optsFor(d, s.code).map(o => `<option value="${o.id}" ${o.id === cur ? 'selected' : ''} ${o.no && o.id !== cur ? 'disabled' : ''}>${esc(o.text)}</option>`).join('')}</select>
         ${extra.length ? `<span class="hint">+ ${esc(extra.join(', '))}</span>` : ''}</td>`; }).join('')}
       <td><b>${w.days.reduce((n, _, d) => n + (where[d].get(s.code) || []).length, 0)}</b></td></tr>`).join('');
   const nm = R.misses.length;
@@ -1273,11 +1327,11 @@ function renderPlan(w){
     <div class="phead"><div><h2>Plan 1st-year residents</h2><div class="hint">${esc(w.range)}${locked(w) ? " · senior's schedule is locked 🔒" : ''}</div></div>
       <div class="acts">${nm ? `<button id="applyRule">Apply OT rules (${nm})</button>` : ''}<button class="primary" id="savePlan">Save &amp; review →</button></div></div>
     ${w.leave || myLeaveText(w) ? `<div class="leaveline"><b>Leave:</b> ${esc([w.leave, myLeaveText(w)].filter(Boolean).join('  '))}</div>` : ''}
-    ${mine.length ? `<div class="planwrap"><table class="plan"><thead><tr><th class="who">Resident</th>${w.days.map(d => `<th>${esc(d.day)} ${esc(d.date)}</th>`).join('')}<th>Total</th></tr></thead>
+    ${mine.length ? `<div class="planwrap"><table class="plan"><thead><tr><th class="who">Resident</th>${w.days.map(d => `<th class="${isWkend(d) ? 'wk' : ''}">${esc(d.day)} ${esc(d.date)}${isWkend(d) ? '<br><span class="hint">weekend</span>' : ''}</th>`).join('')}<th>Total</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot><tr><td class="who" style="background:#fafbfc">Cases with no 1st year</td>${open.map(o => `<td title="${esc(o.join(', '))}">${o.length ? esc(o.join(', ')) : '✓'}</td>`).join('')}<td></td></tr></tfoot></table></div>`
       : `<p>No 1st-year residents found. Open <b>⋯ → Settings &amp; locking</b> and tick the category you schedule.</p>`}
-    <p class="hint" style="margin-top:10px">Pick where each resident works each day; it saves automatically. OT rules are filled in for you: ${esc(ruleSummary())}.</p>
+    <p class="hint" style="margin-top:10px">Pick where each resident works each day; it saves automatically. OT rules are filled in for you: ${esc(ruleSummary())}. One neuro OT per resident per week. Weekend = FRI, SAT, SUN: whoever worked last weekend${prevWeek(w) ? ` (${esc(prevWeek(w).range)})` : ''} is off this weekend.${prevWeek(w) ? '' : ' <i>Last week is not in the app, so the weekend rule has nothing to check yet.</i>'}</p>
   </div>`;
 }
 function setMine(w, code, d, colId){
@@ -1291,6 +1345,8 @@ function setMine(w, code, d, colId){
 $('#main').addEventListener('change', e => {
   const t = e.target; if (!t.matches('select[data-p]')) return;
   const w = week(), code = t.dataset.p, d = +t.dataset.d;
+  const no = blockReason(w, code, d, t.value || null);
+  if (no){ render(); toast(esc(no), [['OK', null]]); return; }
   setMine(w, code, d, t.value || null);
   undoAuto(w, code, d);   // this day's duty changed: take back what the rule did for it
   const todo = ruleCheck(w).misses.filter(x => x.code === code && x.from === d);
@@ -1310,7 +1366,7 @@ function renderReview(w){
   const A = analyse(w);
   let g = `<div class="gridwrap"><table class="grid"><thead><tr><th class="day">DAY /<br>DATE</th>${w.columns.map(c => `<th><div style="padding:8px 4px">${esc(c.name)}</div></th>`).join('')}</tr></thead><tbody>`;
   w.days.forEach((day, d) => {
-    g += `<tr class="${day.day === 'SAT' || day.day === 'SUN' ? 'wkend' : ''}"><th class="day"><div style="font-size:18px;font-weight:700">${esc(day.date)}</div>${esc(day.day)}</th>`;
+    g += `<tr class="${isWkend(day) ? 'wkend' : ''}"><th class="day"><div style="font-size:18px;font-weight:700">${esc(day.date)}</div>${esc(day.day)}</th>`;
     w.columns.forEach(c => {
       const v = w.cells[cellKey(d, c.id)];
       g += '<td class="cell">';

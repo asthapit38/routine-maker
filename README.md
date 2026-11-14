@@ -16,6 +16,8 @@ The app has four steps, shown at the top.
      - **OT 2 (neuro)** today → tomorrow **OT 5/LR** → day after **leave**
      - **OT 7 (GI)** today → tomorrow **LR** → day after **leave**
      - If the chain runs past Sunday, the review lists what carries into next week.
+   - **One neuro OT (OT 2) per resident per week.** A second one can't be picked.
+   - **Weekend = Friday, Saturday, Sunday.** Anyone who worked any weekend day last week is off this weekend: those days are locked, and the app refuses an OT 2/OT 7 pick that would push them into a weekend day. "Last week" is the previous week saved in the app.
 4. **Review & download**: the whole table, with your 1st years in blue. **Download Word (.docx)** gives back **the senior's original file**, with only the 1st-year codes added to the table and your leave added to the LEAVE box. Everything else is byte-for-byte unchanged.
 
 If the senior sends a **revised file** for the same week, upload it and choose *update*. Their part is replaced, and your 1st-year plan is kept.

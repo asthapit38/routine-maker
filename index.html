@@ -90,6 +90,18 @@ table.plan{border-collapse:separate;border-spacing:0;width:100%;font-size:13px}
 .plan td.wk:not(.lv){background:#faf8fe}
 .plan select.off:disabled{background:#efeaf8;color:#6b4bb8}
 .plan select:disabled{background:#fbe9e9;color:var(--bad-ink);opacity:1}
+.mhead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:24px 0 4px}
+.mhead h3{margin:0}
+.mhead button{font-size:13px;padding:4px 10px}
+table.month td,table.month th{padding:4px 3px;font-size:11px;min-width:34px}
+table.month td.on{background:#eef4ff;color:#0b3d91;font-weight:600}
+table.month td.on.neuro,.mk.neuro{background:#fdeccf;color:#7a4b00}
+table.month td.lv{color:var(--bad-ink);font-weight:700}
+table.month td.wk:not(.on):not(.lv),table.month th.wk{background:#ece8f7}
+table.month .wsep{border-left:2px solid #9aa3b5}
+table.month th a{color:var(--accent);text-decoration:none;font-weight:600}
+#monthSel{font-size:16px;font-weight:700;padding:2px 6px}
+.mk{padding:0 4px;border-radius:3px}
 .ro .grid td.cell{cursor:default}
 .ro .grid td.cell:hover{background:#fff}
 .steps i{font-style:normal}
@@ -242,6 +254,7 @@ dialog::backdrop{background:rgba(20,25,35,.35)}
     <div class="menu-list">
       <button id="btnStaff">Staff directory</button>
       <button data-more="settings">Settings &amp; locking</button>
+      <button data-more="month">Month overview</button>
       <button data-more="edit">Edit full table (advanced)</button>
       <hr>
       <button data-dl="docx">Download original .docx with 1st years</button>
@@ -556,9 +569,10 @@ function analyse(w){
 function render(){
   sortWeeks();
   const w = week();
-  if (!w && view !== 'home') view = 'home';
+  if (!w && view !== 'home' && view !== 'month') view = 'home';
   document.querySelectorAll('#steps [data-step]').forEach(b => { b.classList.toggle('on', b.dataset.step === view || (view === 'edit' && b.dataset.step === 'review')); b.disabled = b.dataset.step !== 'home' && !w; });
   if (view === 'home') return renderHome();
+  if (view === 'month') return renderMonth();
   if (view === 'leave') return renderLeave(w);
   if (view === 'plan') return renderPlan(w);
   if (view === 'review') return renderReview(w);
@@ -898,6 +912,7 @@ document.querySelectorAll('[data-more]').forEach(b => b.onclick = () => {
   const w = week(); if (!w) return;
   if (b.dataset.more === 'settings') return openSettings();
   if (b.dataset.more === 'edit') return go('edit');
+  if (b.dataset.more === 'month') return go('month');
   if (b.dataset.more === 'dup'){ const c = JSON.parse(JSON.stringify(w)); c.id = uid(); idb.get(w.id).then(f => f && idb.put(c.id, f)).catch(() => {}); c.created = Date.now(); c.range = (c.range || '') + ' (copy)'; state.weeks.push(c); state.current = c.id; }
   if (b.dataset.more === 'del'){ if (!confirm(`Delete the week "${weekLabel(w)}"? This cannot be undone (download a backup first if unsure).`)) return;
     state.weeks = state.weeks.filter(x => x !== w); idb.del(w.id).catch(() => {}); sortWeeks(); state.current = state.weeks[0] ? state.weeks[0].id : null; view = 'home'; }
@@ -1086,6 +1101,12 @@ async function importJson(j){
   if (j.week) return importWeek(j, 'week');
   // original .docx files travel inside full backups as base64
   if (j.files) for (const [id, f] of Object.entries(j.files)) { try { await idb.put(id, { name: f.name, buf: b64ToBuf(f.b64) }); } catch(e){} }
+  if (Array.isArray(j.weeks) && j.scope === 'month'){
+    j.weeks.forEach(nw => { state.weeks = state.weeks.filter(x => x.id !== nw.id && !(x.range && x.range === nw.range)); state.weeks.push(nw); });
+    mergeStaff(j.staff);
+    if (!state.weeks.some(w => w.id === state.current)) state.current = j.weeks[0] ? j.weeks[0].id : null;
+    save(); state.month = j.month || null; go('month'); flash(`Month restored: ${j.weeks.length} week${j.weeks.length === 1 ? '' : 's'}`); return;
+  }
   if (Array.isArray(j.weeks)){
     const replace = state.weeks.length && confirm('Restore this backup?\n\nOK = replace ALL current data with the backup.\nCancel = merge the backup into current data.');
     if (replace || !state.weeks.length){ state = { staff: j.staff || [], weeks: j.weeks, current: j.current || (j.weeks[0] && j.weeks[0].id) }; }
@@ -1239,12 +1260,17 @@ async function parseDocx(buf){
 /* ================= simple flow: 1 upload → 2 plan → 3 review & download ================= */
 function mineCount(w){ const m = staffMap(); return Object.values(w.cells).reduce((n, c) => n + (c.staff || []).filter(x => isMine(x, m)).length, 0); }
 function renderHome(){
-  const list = state.weeks.map(w => `<li><span class="t" data-open="${w.id}"><b>${esc(w.range || 'Untitled week')}</b><span class="hint">${esc(w.fileName || 'created in the app')} · ${mineCount(w)} 1st-year duties</span></span>
-    <button data-open="${w.id}">Open</button></li>`).join('');
+  const item = w => `<li><span class="t" data-open="${w.id}"><b>${esc(w.range || 'Untitled week')}</b><span class="hint">${esc(w.fileName || 'created in the app')} · ${mineCount(w)} 1st-year duties</span></span>
+    <button data-open="${w.id}">Open</button></li>`;
+  const idx = monthIndex(), keys = [...idx.keys()].sort().reverse();
+  const loose = state.weeks.filter(w => !dayDates(w).some(Boolean));
+  const list = keys.map(k => { const ws = [...new Set(idx.get(k).map(e => e.w))].sort((a, b) => (a.range || '').localeCompare(b.range || ''));
+      return `<div class="mhead"><h3>${esc(monthName(k))}</h3><button data-month="${k}">Month overview</button></div><ul class="weeklist">${ws.map(item).join('')}</ul>`; }).join('')
+    + (loose.length ? `<div class="mhead"><h3>Other weeks</h3></div><ul class="weeklist">${loose.map(item).join('')}</ul>` : '');
   $('#main').innerHTML = `<div class="home">
     <label class="drop" id="drop"><span class="big">📄</span><b>Upload the senior's roster</b><span class="hint">Drop the Word file (.docx) here, or tap to choose it</span>
       <input type="file" id="dropIn" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden></label>
-    ${list ? `<h3 style="margin:24px 0 4px">Previous weeks</h3><ul class="weeklist">${list}</ul>` : ''}
+    ${list}
   </div>`;
   const drop = $('#drop');
   $('#dropIn').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) handleFile(f); };
@@ -1253,8 +1279,108 @@ function renderHome(){
   drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) handleFile(f); });
 }
 $('#main').addEventListener('click', e => {
-  const o = e.target.closest('[data-open]'); if (o){ state.current = o.dataset.open; save(); go('plan'); }
+  const o = e.target.closest('[data-open]'); if (o){ state.current = o.dataset.open; save(); go('plan'); return; }
+  const mo = e.target.closest('[data-month]'); if (mo){ state.month = mo.dataset.month; save(); go('month'); }
 });
+
+/* ================= months ================= */
+const BS_MONTHS = ['Baisakh', 'Jestha', 'Ashadh', 'Shrawan', 'Bhadra', 'Ashwin', 'Kartik', 'Mangsir', 'Poush', 'Magh', 'Falgun', 'Chaitra'];
+const monthName = k => { const [y, m] = k.split('/').map(Number); return `${BS_MONTHS[m - 1] || 'Month ' + m} ${y}`; };
+/* full date of each day of a week, from its date range + the day numbers (rolls the month over when the day number drops) */
+function dayDates(w){
+  const st = parseYMD(w.range); if (!st) return w.days.map(() => null);
+  let [y, m] = st, prev = null;
+  return w.days.map(day => { const n = parseInt(day.date, 10); if (isNaN(n)) return null;
+    if (prev !== null && n < prev){ m++; if (m > 12){ m = 1; y++; } } prev = n;
+    return { y, m, d: n, key: `${y}/${String(m).padStart(2, '0')}` }; });
+}
+/* month key -> [{w, d, date}] for every stored day */
+function monthIndex(){
+  const idx = new Map();
+  state.weeks.forEach(w => dayDates(w).forEach((dt, d) => { if (!dt) return; if (!idx.has(dt.key)) idx.set(dt.key, []); idx.get(dt.key).push({ w, d, date: dt }); }));
+  idx.forEach(list => list.sort((a, b) => a.date.d - b.date.d || b.w.created - a.w.created));
+  return idx;
+}
+function renderMonth(){
+  const idx = monthIndex(), keys = [...idx.keys()].sort();
+  if (!keys.length){ $('#main').innerHTML = '<div class="sheet empty">No weeks with dates yet. Upload a roster first.</div>'; return; }
+  const key = keys.includes(state.month) ? state.month : keys[keys.length - 1];
+  // one column per date (if two weeks share a date, the newer upload wins)
+  const seen = new Set(), cols = idx.get(key).filter(e => !seen.has(e.date.d) && seen.add(e.date.d));
+  const m = staffMap(), mine = state.staff.filter(s => myCats().has(lc(s.category)));
+  const info = new Map(state.weeks.map(w => [w.id, { A: analyse(w), neuro: colFor(w, CHAIN[0].from) }]));
+  const cell = (e, code) => {
+    const { A, neuro } = info.get(e.w.id), at = [];
+    for (const c of e.w.columns){ const v = e.w.cells[cellKey(e.d, c.id)]; if (v && (v.staff || []).includes(code)) at.push(c); }
+    return { lv: A.onLeave(code, e.d), at, neuro: !!(neuro && at.includes(neuro)) };
+  };
+  const rows = mine.map(s => {
+    let duties = 0, neuro = 0, wk = 0, leave = 0;
+    const tds = cols.map((e, i) => { const x = cell(e, s.code), we = isWkend(e.w.days[e.d]);
+      const sep = i && cols[i - 1].w !== e.w ? ' wsep' : '';
+      if (x.lv){ leave++; return `<td class="lv${sep}">L</td>`; }
+      if (!x.at.length) return `<td class="${we ? 'wk' : ''}${sep}"></td>`;
+      duties++; if (x.neuro) neuro++; if (we) wk++;
+      return `<td class="on ${x.neuro ? 'neuro' : ''} ${we ? 'wk' : ''}${sep}" title="${esc(x.at.map(c => c.name).join(', '))}">${esc(x.at.map(c => c.name.replace(/\s+/g, '')).join(' '))}</td>`; }).join('');
+    return `<tr><td class="who"><b>${esc(s.code)}</b> <span class="hint">${esc(s.name)}</span></td>${tds}<td>${duties}</td><td>${neuro}</td><td>${wk}</td><td>${leave}</td></tr>`;
+  }).join('');
+  const nums = cols.map(e => e.date.d), lo = Math.min(...nums), hi = Math.max(...nums);
+  const gaps = []; for (let n = lo; n <= hi; n++) if (!nums.includes(n)) gaps.push(n);
+  const weeks = [...new Set(cols.map(e => e.w))];
+  $('#main').innerHTML = `<div class="sheet">
+    <div class="phead"><div><h2>Month overview · <select id="monthSel">${keys.map(k => `<option value="${k}" ${k === key ? 'selected' : ''}>${esc(monthName(k))}</option>`).join('')}</select></h2>
+      <div class="hint">${weeks.length} week${weeks.length === 1 ? '' : 's'} stored · dates ${lo}–${hi}${gaps.length ? ` · <b style="color:var(--bad-ink)">missing: ${gaps.join(', ')}</b>` : ''}</div></div>
+      <div class="acts"><button id="mBackup">Back up month (.json)</button><button class="primary" id="mZip">⬇ All Word files (.zip)</button></div></div>
+    <div class="planwrap"><table class="plan month"><thead>
+      <tr><th class="who"></th>${weeks.map(w => `<th colspan="${cols.filter(e => e.w === w).length}" class="wsep"><a href="#" data-open="${w.id}">${esc(w.range)}</a></th>`).join('')}<th colspan="4"></th></tr>
+      <tr><th class="who">Resident</th>${cols.map((e, i) => `<th class="${isWkend(e.w.days[e.d]) ? 'wk' : ''}${i && cols[i - 1].w !== e.w ? ' wsep' : ''}">${e.date.d}<br><span class="hint">${esc(e.w.days[e.d].day.slice(0, 2))}</span></th>`).join('')}<th>Duties</th><th>Neuro</th><th>Wkend</th><th>Leave</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    <p class="hint" style="margin-top:8px">L = leave · <span class="mk neuro">OT2</span> = neuro · shaded = weekend (FRI–SUN) · click a week to open it.</p>
+  </div>`;
+}
+$('#main').addEventListener('change', e => { if (e.target.id === 'monthSel'){ state.month = e.target.value; save(); render(); } });
+$('#main').addEventListener('click', async e => {
+  if (view !== 'month') return;
+  if (e.target.closest('a[data-open]')) e.preventDefault();
+  const key = ($('#monthSel') || {}).value; if (!key) return;
+  const weeks = [...new Set((monthIndex().get(key) || []).map(x => x.w))];
+  if (e.target.id === 'mBackup'){
+    const files = {};
+    for (const x of weeks){ try { const f = await idb.get(x.id); if (f) files[x.id] = { name: f.name, b64: bufToB64(f.buf) }; } catch(err){} }
+    download(`roster-${monthName(key).replace(' ', '-')}.json`, JSON.stringify({ app: 'routine-maker', version: 2, scope: 'month', month: key, staff: state.staff, settings: state.settings, weeks, files }), 'application/json');
+  }
+  if (e.target.id === 'mZip'){
+    e.target.disabled = true; e.target.textContent = 'Preparing…';
+    try {
+      const out = [], used = new Set();
+      for (const x of weeks){
+        let name, data; const f = await idb.get(x.id).catch(() => null);
+        if (f){ name = (f.name || fileBase(x) + '.docx').replace(/\.docx$/i, '') + ' (1st year).docx'; data = new Uint8Array(await (await buildDocx(x, f.buf)).arrayBuffer()); }
+        else { name = fileBase(x) + '.doc'; data = new TextEncoder().encode(wordHtml(x)); }
+        while (used.has(name)) name = name.replace(/(\.\w+)$/, ' (2)$1'); used.add(name);
+        out.push({ name, data });
+      }
+      download(`roster-${monthName(key).replace(' ', '-')}.zip`, makeZip(out));
+    } catch(err){ console.error(err); alert('Could not build the zip: ' + err.message); }
+    render();
+  }
+});
+/* tiny zip writer (stored, no compression) */
+function makeZip(files){
+  const enc = new TextEncoder(), parts = [], cd = []; let pos = 0;
+  files.forEach(f => {
+    const nb = enc.encode(f.name), crc = crc32(f.data), h = new Uint8Array(30 + nb.length), v = new DataView(h.buffer);
+    v.setUint32(0, 0x04034b50, true); v.setUint16(4, 20, true); v.setUint16(6, 0x0800, true); v.setUint16(8, 0, true);
+    v.setUint16(12, 0x21, true); v.setUint32(14, crc, true); v.setUint32(18, f.data.length, true); v.setUint32(22, f.data.length, true); v.setUint16(26, nb.length, true); h.set(nb, 30);
+    const c = new Uint8Array(46 + nb.length), cv = new DataView(c.buffer);
+    cv.setUint32(0, 0x02014b50, true); cv.setUint16(4, 20, true); cv.setUint16(6, 20, true); cv.setUint16(8, 0x0800, true); cv.setUint16(10, 0, true);
+    cv.setUint16(14, 0x21, true); cv.setUint32(16, crc, true); cv.setUint32(20, f.data.length, true); cv.setUint32(24, f.data.length, true); cv.setUint16(28, nb.length, true); cv.setUint32(42, pos, true); c.set(nb, 46);
+    parts.push(h, f.data); pos += h.length + f.data.length; cd.push(c);
+  });
+  const cdLen = cd.reduce((n, c) => n + c.length, 0), end = new Uint8Array(22), ev = new DataView(end.buffer);
+  ev.setUint32(0, 0x06054b50, true); ev.setUint16(8, files.length, true); ev.setUint16(10, files.length, true); ev.setUint32(12, cdLen, true); ev.setUint32(16, pos, true);
+  return new Blob([...parts, ...cd, end], { type: 'application/zip' });
+}
 
 /* step 2: leave requests */
 function renderLeave(w){

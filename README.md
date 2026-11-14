@@ -20,6 +20,15 @@ The app has four steps, shown at the top.
    - **Weekend = Friday, Saturday, Sunday.** Anyone who worked any weekend day last week is off this weekend: those days are locked, and the app refuses an OT 2/OT 7 pick that would push them into a weekend day. "Last week" is the previous week saved in the app.
 4. **Review & download**: the whole table, with your 1st years in blue. **Download Word (.docx)** gives back **the senior's original file**, with only the 1st-year codes added to the table and your leave added to the LEAVE box. Everything else is byte-for-byte unchanged.
 
+## Months
+
+All weeks are kept on the device. The Upload screen groups them by Nepali month (Kartik, Mangsir, …); a week that crosses two months appears under both.
+
+**Month overview** (from the Upload screen or **⋯**) shows every 1st year across every date of the month: where they worked, leave (L), neuro (OT 2), weekends shaded, and totals for duties, neuro, weekend days and leave. Dates with no week uploaded are listed as *missing*.
+
+- **All Word files (.zip)**: the month's rosters in one download, each in its original format with your 1st years and leave added.
+- **Back up month (.json)**: everything for that month, original Word files included. Restoring it on another device adds or updates only those weeks; other months are left alone.
+
 If the senior sends a **revised file** for the same week, upload it and choose *update*. Their part is replaced, and your 1st-year plan is kept.
 
 The senior's part is locked; you can only place 1st years. Everything else lives in the **⋯** menu: staff directory, settings (which categories you plan, the next-day rule, unlocking a week), the full table editor, other download formats, backup and restore.

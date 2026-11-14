@@ -1,6 +1,6 @@
 /* Duty Roster service worker: offline app shell.
    Bump VERSION whenever you deploy changed files so clients pick them up. */
-const VERSION = 'v8';
+const VERSION = 'v9';
 const CACHE = 'roster-' + VERSION;
 const SHELL = [
   './',

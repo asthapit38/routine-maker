@@ -12,9 +12,10 @@ The app has four steps, shown at the top.
 1. **Upload**: drop the senior's roster (`.docx`) into the box. Earlier weeks are listed below it.
 2. **Leave**: add who asked for leave and tick their days, or press **No leave requested**. Leave is written in the roster's format, initials then dates (e.g. Dr. Ankit Sthapit → `AS 30,1,5`), and is added to the **LEAVE** box of the downloaded file.
 3. **Plan 1st years**: one row per 1st-year resident, one column per day. Pick each person's station from the dropdown. People on leave are locked for that day, and the bottom row lists cases that still have no 1st year.
-   - **Tuesday rules** (filled in automatically when you pick the Tuesday duty, and undone if you change it):
-     - **OT 2 (neuro) on Tuesday** → Wednesday in **OT 5/LR** → Thursday on **leave**
-     - **OT 7 (GI) on Tuesday** → Wednesday in **LR** → Thursday on **leave**
+   - **OT rules**, on any day of the week: they're filled in automatically when you pick the duty, and undone if you change it.
+     - **OT 2 (neuro)** today → tomorrow **OT 5/LR** → day after **leave**
+     - **OT 7 (GI)** today → tomorrow **LR** → day after **leave**
+     - If the chain runs past Sunday, the review lists what carries into next week.
 4. **Review & download**: the whole table, with your 1st years in blue. **Download Word (.docx)** gives back **the senior's original file**, with only the 1st-year codes added to the table and your leave added to the LEAVE box. Everything else is byte-for-byte unchanged.
 
 If the senior sends a **revised file** for the same week, upload it and choose *update*. Their part is replaced, and your 1st-year plan is kept.

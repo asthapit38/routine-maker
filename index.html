@@ -294,7 +294,7 @@ dialog::backdrop{background:rgba(20,25,35,.35)}
   <p style="margin:0 0 6px"><b>Categories I schedule</b></p>
   <div class="hint" style="margin-bottom:6px">In a locked (uploaded) week, you can only add or remove people in these categories. Everything else is read-only.</div>
   <div class="cats" id="setCats"></div>
-  <p style="margin:14px 0 6px"><b>Tuesday rules</b></p>
+  <p style="margin:14px 0 6px"><b>OT rules</b></p>
   <div class="hint" id="ruleText"></div>
   <p style="margin:14px 0 6px"><b>This week</b></p>
   <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="setLock"> Lock the senior's schedule for this week</label>
@@ -396,12 +396,12 @@ function parseLeave(text){
   return m;
 }
 
-/* ---- Tuesday rules ----
-   OT 2 (neuro) on TUE -> WED in OT 5/LR -> THU on leave
-   OT 7 (GI)    on TUE -> WED in LR      -> THU on leave            */
+/* ---- OT rules (any day of the week) ----
+   OT 2 (neuro) today -> tomorrow OT 5/LR -> day after on leave
+   OT 7 (GI)    today -> tomorrow LR      -> day after on leave       */
 const CHAIN = [
-  { name: 'neuro', from: 'OT 2', day: 'TUE', next: 'OT 5/LR' },
-  { name: 'GI',    from: 'OT 7', day: 'TUE', next: 'LR' }
+  { name: 'neuro', from: 'OT 2', next: 'OT 5/LR' },
+  { name: 'GI',    from: 'OT 7', next: 'LR' }
 ];
 const squash = x => lc(x).replace(/\s+/g, '');
 // "OT 5" matches "OT 5/LR" but "OT 2" never matches "OT 20"; "LR" only matches "LR"
@@ -429,10 +429,10 @@ function addLeave(w, code, date, auto){
 
 /* -> { due: per day Map(code -> {reason, col?, leave?}), misses: [{code, from, col, to, kind, target, reason}] } */
 function ruleCheck(w, known = staffMap(), onLeave = onLeaveFn(w)){
-  const due = w.days.map(() => new Map()), misses = [];
-  CHAIN.forEach(r => {
-    const from = colFor(w, r.from), next = colFor(w, r.next), d = w.days.findIndex(x => lc(x.day) === lc(r.day));
-    if (!from || d < 0) return;
+  const due = w.days.map(() => new Map()), misses = [], spill = [];
+  CHAIN.forEach(r => w.days.forEach((_, d) => {
+    const from = colFor(w, r.from), next = colFor(w, r.next);
+    if (!from) return;
     const v = w.cells[cellKey(d, from.id)]; if (!v) return;
     (v.staff || []).filter(c => isMine(c, known)).forEach(code => {
       const reason = `${from.name}${v.label ? ' (' + v.label + ')' : ''} on ${w.days[d].day}`;
@@ -444,13 +444,16 @@ function ruleCheck(w, known = staffMap(), onLeave = onLeaveFn(w)){
         due[d + 2].set(code, { reason, leave: true });
         if (!onLeave(code, d + 2)) misses.push({ code, from: d, col: from.id, to: d + 2, kind: 'leave', reason });
       }
+      // end of the week: the rest carries into next week's roster
+      if (!w.days[d + 1]) spill.push(`${code} did ${reason} → next week: day 1 ${next ? next.name : ''}, day 2 leave`);
+      else if (!w.days[d + 2]) spill.push(`${code} did ${reason} → leave on the first day of next week`);
     });
-  });
-  return { due, misses };
+  }));
+  return { due, misses, spill };
 }
 function missText(w, x){ const day = w.days[x.to];
   return `Rule: ${x.code} did ${x.reason} → ` + (x.kind === 'leave' ? `should be on leave ${day.day} ${day.date}` : `should be in ${x.target.name} on ${day.day} ${day.date}`); }
-/* make the rule happen; remembers what it did so it can be undone if the Tuesday duty changes */
+/* make the rule happen; remembers what it did so it can be undone if that day's duty changes */
 function applyRule(w, list){
   w.auto = w.auto || []; let n = 0;
   list.forEach(x => {
@@ -468,7 +471,7 @@ function undoAuto(w, code, from){
   });
   w.auto = (w.auto || []).filter(a => !(a.code === code && a.from === from));
 }
-function ruleSummary(){ return CHAIN.map(r => `${r.from} (${r.name}) on ${r.day} → next day ${r.next} → day after on leave`).join(' · '); }
+function ruleSummary(){ return CHAIN.map(r => `${r.from} (${r.name}) → next day ${r.next} → day after leave`).join(' · '); }
 
 /* per-day analysis: duplicates, leave conflicts, counts */
 function analyse(w){
@@ -494,6 +497,7 @@ function analyse(w){
   });
   const R = ruleCheck(w, known, onLeave);
   R.misses.slice().reverse().forEach(x => issues.unshift(missText(w, x)));
+  R.spill.forEach(t => issues.push('Rule: ' + t));
   const missKey = new Set(R.misses.map(x => `${x.from}|${x.col}|${x.code}`));
   return { perDay, counts, onLeave, known, rule: R, missKey, issues: [...new Set(issues)] };
 }
@@ -779,7 +783,7 @@ dlgCell.addEventListener('close', () => {
   // next-day rule: offer to place them in OT 5 tomorrow
   const todo = ruleCheck(w).misses.filter(x => x.from === sel.dayIdx && x.col === sel.colId);
   if (todo.length){
-    toast(`${esc([...new Set(todo.map(x => x.code))].join(', '))} did ${esc(todo[0].reason)} → apply the Tuesday rule (${esc(todo.map(x => x.kind === 'leave' ? 'leave ' + w.days[x.to].day : x.target.name + ' ' + w.days[x.to].day).join(', '))})?`,
+    toast(`${esc([...new Set(todo.map(x => x.code))].join(', '))} did ${esc(todo[0].reason)} → apply the OT rule (${esc(todo.map(x => x.kind === 'leave' ? 'leave ' + w.days[x.to].day : x.target.name + ' ' + w.days[x.to].day).join(', '))})?`,
       [['Add', () => { applyRule(w, todo); save(); render(); }], ['Not now', null, 'link']]);
   }
 });
@@ -1219,7 +1223,7 @@ function renderLeave(w){
     ${w.leave ? `<div class="leaveline"><b>Already on the roster:</b> ${esc(w.leave)}</div>` : ''}
     ${rows || '<p class="hint">No leave added yet.</p>'}
     <p><button id="addLeave">+ Add leave</button></p>
-    ${autos.length ? `<div class="lvauto">Added automatically by the Tuesday rules: ${autos.map(r => `<b>${esc(r.code)}</b> ${esc(r.dates.join(','))} (after ${esc(r.auto.reason)})`).join(' · ')}</div>` : ''}
+    ${autos.length ? `<div class="lvauto">Added automatically by the OT rules: ${autos.map(r => `<b>${esc(r.code)}</b> ${esc(r.dates.join(','))} (after ${esc(r.auto.reason)})`).join(' · ')}</div>` : ''}
     ${txt ? `<div class="lvprev">Will be added to the LEAVE box as: <b>${esc(txt)}</b></div>` : ''}
   </div>`;
 }
@@ -1267,13 +1271,13 @@ function renderPlan(w){
   const nm = R.misses.length;
   $('#main').innerHTML = `<div class="sheet">
     <div class="phead"><div><h2>Plan 1st-year residents</h2><div class="hint">${esc(w.range)}${locked(w) ? " · senior's schedule is locked 🔒" : ''}</div></div>
-      <div class="acts">${nm ? `<button id="applyRule">Apply Tuesday rules (${nm})</button>` : ''}<button class="primary" id="savePlan">Save &amp; review →</button></div></div>
+      <div class="acts">${nm ? `<button id="applyRule">Apply OT rules (${nm})</button>` : ''}<button class="primary" id="savePlan">Save &amp; review →</button></div></div>
     ${w.leave || myLeaveText(w) ? `<div class="leaveline"><b>Leave:</b> ${esc([w.leave, myLeaveText(w)].filter(Boolean).join('  '))}</div>` : ''}
     ${mine.length ? `<div class="planwrap"><table class="plan"><thead><tr><th class="who">Resident</th>${w.days.map(d => `<th>${esc(d.day)} ${esc(d.date)}</th>`).join('')}<th>Total</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot><tr><td class="who" style="background:#fafbfc">Cases with no 1st year</td>${open.map(o => `<td title="${esc(o.join(', '))}">${o.length ? esc(o.join(', ')) : '✓'}</td>`).join('')}<td></td></tr></tfoot></table></div>`
       : `<p>No 1st-year residents found. Open <b>⋯ → Settings &amp; locking</b> and tick the category you schedule.</p>`}
-    <p class="hint" style="margin-top:10px">Pick where each resident works each day; it saves automatically. Tuesday rules are filled in for you: ${esc(ruleSummary())}.</p>
+    <p class="hint" style="margin-top:10px">Pick where each resident works each day; it saves automatically. OT rules are filled in for you: ${esc(ruleSummary())}.</p>
   </div>`;
 }
 function setMine(w, code, d, colId){
@@ -1288,11 +1292,11 @@ $('#main').addEventListener('change', e => {
   const t = e.target; if (!t.matches('select[data-p]')) return;
   const w = week(), code = t.dataset.p, d = +t.dataset.d;
   setMine(w, code, d, t.value || null);
-  undoAuto(w, code, d);   // the Tuesday duty changed: take back what the rule did for it
+  undoAuto(w, code, d);   // this day's duty changed: take back what the rule did for it
   const todo = ruleCheck(w).misses.filter(x => x.code === code && x.from === d);
   if (todo.length){
     applyRule(w, todo);
-    flash(`${code}: ` + todo.map(x => x.kind === 'leave' ? `leave ${w.days[x.to].day}` : `${x.target.name} ${w.days[x.to].day}`).join(', ') + ' (Tuesday rule)');
+    flash(`${code}: ` + todo.map(x => x.kind === 'leave' ? `leave ${w.days[x.to].day}` : `${x.target.name} ${w.days[x.to].day}`).join(', ') + ' (OT rule)');
   }
   save(); const y = scrollY, x = ($('.planwrap') || {}).scrollLeft; render(); scrollTo(0, y); if ($('.planwrap')) $('.planwrap').scrollLeft = x;
 });

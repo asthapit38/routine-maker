@@ -20,6 +20,39 @@ The app has four steps, shown at the top.
    - **Weekend = Friday, Saturday, Sunday.** Anyone who worked any weekend day last week is off this weekend: those days are locked, and the app refuses an OT 2/OT 7 pick that would push them into a weekend day. "Last week" is the previous week saved in the app.
 4. **Review & download**: the whole table, with your 1st years in blue. **Download Word (.docx)** gives back **the senior's original file**, with only the 1st-year codes added to the table and your leave added to the LEAVE box. Everything else is byte-for-byte unchanged.
 
+## Generate schedule
+
+In the planner, **✨ Generate schedule** fills the week for you:
+
+- **Slots to fill:** every cell with a case (not `XX`), plus the columns that need a 1st year every day. By default those are *LR* and *Ortho OT/ LR*; they're learned from past weeks and can be changed in Settings. Neuro/GI slots are filled first, then the every-day columns, then the cases that usually get a 1st year.
+- **Rules it follows:**
+  - leave (the senior's and yours);
+  - one station per day;
+  - one neuro per week;
+  - the OT 2 / OT 7 chains (it never starts a chain that would run into next week);
+  - the weekend rule;
+  - the senior's part stays untouched.
+- **Fairness from past data** (the last 4 weeks stored in the app):
+  - fewest duties this week first, then over past weeks;
+  - neuro/GI turns go to whoever has had the fewest;
+  - weekend days go to whoever has worked the fewest;
+  - stations rotate (it avoids last week's station and yesterday's station);
+  - people who are allowed to work this weekend are kept free for it.
+- It keeps anything you've already placed. **Clear plan** starts fresh; **Undo** reverts the last generate or clear.
+- If there aren't enough free residents, the leftover cases stay empty and are listed in the bottom row.
+
+## Rules and validations (summary)
+
+| | |
+|---|---|
+| OT 2 (neuro) today | tomorrow OT 5/LR, day after leave (auto) |
+| OT 7 (GI) today | tomorrow LR, day after leave (auto) |
+| Leave | no duty on a leave day |
+| One station | at most one station per resident per day |
+| Neuro limit | one neuro OT per resident per week |
+| Weekend (FRI–SUN) | worked last weekend → off this weekend, also through a chain |
+| Senior's schedule | locked; only 1st years are added |
+
 ## Months
 
 All weeks are kept on the device. The Upload screen groups them by Nepali month (Kartik, Mangsir, …); a week that crosses two months appears under both.

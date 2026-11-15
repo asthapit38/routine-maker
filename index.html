@@ -310,6 +310,9 @@ dialog::backdrop{background:rgba(20,25,35,.35)}
   <p style="margin:0 0 6px"><b>Categories I schedule</b></p>
   <div class="hint" style="margin-bottom:6px">In a locked (uploaded) week, you can only add or remove people in these categories. Everything else is read-only.</div>
   <div class="cats" id="setCats"></div>
+  <p style="margin:14px 0 6px"><b>Generate schedule</b></p>
+  <div class="hint" style="margin-bottom:6px">Columns that need a 1st year every day, even with no case written in. Leave empty to learn this from past weeks.</div>
+  <div class="row"><label for="everyCols">Every day</label><input type="text" id="everyCols" placeholder="LR, Ortho OT/ LR"></div>
   <p style="margin:14px 0 6px"><b>OT rules</b></p>
   <div class="hint" id="ruleText"></div>
   <p style="margin:14px 0 6px"><b>This week</b></p>
@@ -925,11 +928,17 @@ function openSettings(){
   $('#setCats').innerHTML = cats.length ? cats.map(c => `<label><input type="checkbox" value="${esc(c)}" ${m.has(lc(c)) ? 'checked' : ''}> ${esc(c)}</label>`).join('') : '<span class="hint">No categories yet: add staff first.</span>';
   $('#setLock').checked = locked(w); $('#setLock').disabled = !w;
   $('#ruleText').textContent = ruleSummary();
+  $('#everyCols').value = (state.settings && state.settings.everyCols) ? state.settings.everyCols.join(', ') : '';
+  $('#everyCols').placeholder = 'learned: ' + (learnEveryCols() || DEFAULT_EVERY).join(', ');
   $('#dlgSettings').showModal();
 }
 $('#setCats').addEventListener('change', () => {
   state.settings = { ...(state.settings || {}), myCats: [...document.querySelectorAll('#setCats input:checked')].map(i => i.value) };
   save(); render();
+});
+$('#everyCols').addEventListener('change', e => {
+  const v = e.target.value.split(/[,;]+/).map(x => x.trim()).filter(Boolean);
+  state.settings = { ...(state.settings || {}), everyCols: v.length ? v : null }; save(); render();
 });
 $('#setLock').addEventListener('change', e => {
   const w = week(); if (!w) return;
@@ -1451,15 +1460,117 @@ function renderPlan(w){
   const nm = R.misses.length;
   $('#main').innerHTML = `<div class="sheet">
     <div class="phead"><div><h2>Plan 1st-year residents</h2><div class="hint">${esc(w.range)}${locked(w) ? " · senior's schedule is locked 🔒" : ''}</div></div>
-      <div class="acts">${nm ? `<button id="applyRule">Apply OT rules (${nm})</button>` : ''}<button class="primary" id="savePlan">Save &amp; review →</button></div></div>
+      <div class="acts">${w.undo ? '<button id="genUndo">↶ Undo</button>' : ''}<button id="genClear">Clear plan</button>${nm ? `<button id="applyRule">Apply OT rules (${nm})</button>` : ''}<button class="primary" id="genRun">✨ Generate schedule</button><button class="primary" id="savePlan">Save &amp; review →</button></div></div>
     ${w.leave || myLeaveText(w) ? `<div class="leaveline"><b>Leave:</b> ${esc([w.leave, myLeaveText(w)].filter(Boolean).join('  '))}</div>` : ''}
     ${mine.length ? `<div class="planwrap"><table class="plan"><thead><tr><th class="who">Resident</th>${w.days.map(d => `<th class="${isWkend(d) ? 'wk' : ''}">${esc(d.day)} ${esc(d.date)}${isWkend(d) ? '<br><span class="hint">weekend</span>' : ''}</th>`).join('')}<th>Total</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot><tr><td class="who" style="background:#fafbfc">Cases with no 1st year</td>${open.map(o => `<td title="${esc(o.join(', '))}">${o.length ? esc(o.join(', ')) : '✓'}</td>`).join('')}<td></td></tr></tfoot></table></div>`
       : `<p>No 1st-year residents found. Open <b>⋯ → Settings &amp; locking</b> and tick the category you schedule.</p>`}
-    <p class="hint" style="margin-top:10px">Pick where each resident works each day; it saves automatically. OT rules are filled in for you: ${esc(ruleSummary())}. One neuro OT per resident per week. Weekend = FRI, SAT, SUN: whoever worked last weekend${prevWeek(w) ? ` (${esc(prevWeek(w).range)})` : ''} is off this weekend.${prevWeek(w) ? '' : ' <i>Last week is not in the app, so the weekend rule has nothing to check yet.</i>'}</p>
+    <p class="hint" style="margin-top:10px"><b>Generate schedule</b> fills every empty case plus ${esc(everyCols().join(', '))} each day, following all rules below and sharing duties, neuro/GI and weekends fairly using ${pastWeeks(w).length} past week${pastWeeks(w).length === 1 ? '' : 's'}. It keeps anything you've already placed; use <b>Clear plan</b> first for a fresh one. Or pick where each resident works each day by hand; it saves automatically. OT rules are filled in for you: ${esc(ruleSummary())}. One neuro OT per resident per week. Weekend = FRI, SAT, SUN: whoever worked last weekend${prevWeek(w) ? ` (${esc(prevWeek(w).range)})` : ''} is off this weekend.${prevWeek(w) ? '' : ' <i>Last week is not in the app, so the weekend rule has nothing to check yet.</i>'}</p>
   </div>`;
 }
+/* ================= schedule generator ================= */
+const DEFAULT_EVERY = ['LR', 'Ortho OT/ LR'];
+const caseIn = v => !!(v && v.label && !/^x+$/i.test(v.label.trim()));
+const startKey = w => { const d = parseYMD(w.range); return d ? d.map(n => String(n).padStart(2, '0')).join('/') : ''; };
+/* earlier weeks (most recent first) */
+function pastWeeks(w, n = 4){ const k = startKey(w); return state.weeks.filter(x => x !== w && startKey(x) && startKey(x) < k).sort((a, b) => startKey(b).localeCompare(startKey(a))).slice(0, n); }
+/* columns that had a 1st year on most days in the stored weeks */
+function learnEveryCols(){
+  const m = staffMap(), tot = new Map(), hit = new Map();
+  state.weeks.forEach(w => w.days.forEach((_, d) => w.columns.forEach(c => {
+    const k = squash(c.name); tot.set(k, (tot.get(k) || 0) + 1);
+    if (((w.cells[cellKey(d, c.id)] || {}).staff || []).some(x => isMine(x, m))) hit.set(k, (hit.get(k) || 0) + 1);
+  })));
+  const days = Math.max(0, ...tot.values()); if (days < 7) return null;
+  const names = new Map(); state.weeks.forEach(w => w.columns.forEach(c => names.set(squash(c.name), c.name)));
+  const out = [...tot].filter(([k, t]) => (hit.get(k) || 0) / t >= 0.6).map(([k]) => names.get(k));
+  return out.length ? out : null;
+}
+const everyCols = () => (state.settings && state.settings.everyCols) || learnEveryCols() || DEFAULT_EVERY;
+/* how often a column gets a 1st year when it has a case (from stored weeks), 0..1 */
+function fillRates(){
+  const m = staffMap(), tot = new Map(), hit = new Map();
+  state.weeks.forEach(w => w.days.forEach((_, d) => w.columns.forEach(c => {
+    const v = w.cells[cellKey(d, c.id)]; const has = (v && v.staff || []).some(x => isMine(x, m)); if (!caseIn(v) && !has) return;
+    const k = squash(c.name); tot.set(k, (tot.get(k) || 0) + 1); if (has) hit.set(k, (hit.get(k) || 0) + 1);
+  })));
+  return k => tot.get(k) >= 3 ? (hit.get(k) || 0) / tot.get(k) : 0.5;
+}
+/* per-resident history from earlier weeks */
+function pastStats(w){
+  const m = staffMap(), st = new Map(), get = c => st.get(c) || (st.set(c, { duties: 0, neuro: 0, gi: 0, wk: 0, col: new Map(), lastCol: new Map() }), st.get(c));
+  const weeks = pastWeeks(w);
+  weeks.forEach((pw, i) => {
+    const neuro = colFor(pw, CHAIN[0].from), gi = colFor(pw, CHAIN[1].from);
+    for (const [k, v] of Object.entries(pw.cells)){
+      const [ds, cid] = k.split('|'), d = +ds, col = pw.columns.find(c => c.id === cid); if (!col || !pw.days[d]) continue;
+      (v.staff || []).filter(x => isMine(x, m)).forEach(code => { const s = get(code); s.duties++;
+        if (neuro && cid === neuro.id) s.neuro++; if (gi && cid === gi.id) s.gi++; if (isWkend(pw.days[d])) s.wk++;
+        const n = squash(col.name); s.col.set(n, (s.col.get(n) || 0) + 1); if (i === 0) s.lastCol.set(n, (s.lastCol.get(n) || 0) + 1); });
+    }
+  });
+  return { get, weeks: weeks.length };
+}
+/* fill every empty slot that needs a 1st year, respecting leave, rules and validations; fair by past data */
+function generateSchedule(w){
+  const m = staffMap(), mine = state.staff.filter(s => myCats().has(lc(s.category))).map(s => s.code);
+  if (!mine.length) return { placed: 0, open: [], note: 'No 1st-year residents found.' };
+  w.undo = JSON.stringify({ cells: w.cells, leaveReq: w.leaveReq || [], auto: w.auto || [] });
+  const H = pastStats(w), rate = fillRates(), lastWk = lastWeekend(w, m), every = everyCols();
+  const neuroC = colFor(w, CHAIN[0].from);
+  const chainOf = col => CHAIN.find(r => colFor(w, r.from) === col) || null;
+  const busy = (code, d) => Object.entries(w.cells).some(([k, v]) => +k.split('|')[0] === d && (v.staff || []).includes(code));
+  const weekDuties = code => Object.values(w.cells).reduce((n, v) => n + ((v.staff || []).includes(code) ? 1 : 0), 0);
+  const colAt = (code, d) => { for (const c of w.columns) if (((w.cells[cellKey(d, c.id)] || {}).staff || []).includes(code)) return c; return null; };
+  let placed = 0; const open = [];
+  w.days.forEach((day, d) => {
+    const onLeave = onLeaveFn(w);
+    // slots: every case + the every-day columns, without a 1st year yet
+    const slots = w.columns.filter(c => {
+      const v = w.cells[cellKey(d, c.id)];
+      if ((v && v.staff || []).some(x => isMine(x, m))) return false;
+      return caseIn(v) || every.some(e => colIs(c.name, e) && squash(c.name) === squash(e));
+    }).map(c => ({ c, chain: chainOf(c), every: every.some(e => squash(e) === squash(c.name)), rate: rate(squash(c.name)), idx: w.columns.indexOf(c) }))
+      .sort((a, b) => (!!b.chain - !!a.chain) || (b.every - a.every) || (b.rate - a.rate) || (a.idx - b.idx));
+    for (const sl of slots){
+      const cands = mine.filter(code => {
+        if (onLeave(code, d) || busy(code, d)) return false;
+        if (lastWk.has(code) && isWkend(day)) return false;
+        if (sl.chain){
+          if (!w.days[d + 2]) return false;                                  // chain would spill into next week
+          if (neuroC && sl.c === neuroC && neuroDays(w, code).length) return false;
+          if (onLeave(code, d + 1) || busy(code, d + 1) || busy(code, d + 2)) return false;
+          if (lastWk.has(code) && isWkend(w.days[d + 1])) return false;
+        }
+        return !blockReason(w, code, d, sl.c.id, lastWk);
+      });
+      if (!cands.length){ open.push(`${day.day} ${day.date}: ${sl.c.name}`); continue; }
+      const k = squash(sl.c.name), prev = d ? colAt : null;
+      const score = code => { const h = H.get(code);
+        return 10 * weekDuties(code) + 3 * h.duties / Math.max(1, H.weeks)
+          + (sl.chain ? 8 * (sl.chain === CHAIN[0] ? h.neuro : h.gi) : 0)
+          + (isWkend(day) ? 6 * h.wk : 0)
+          + 2 * (h.col.get(k) || 0) + 4 * (h.lastCol.get(k) || 0)
+          + (prev && prev(code, d - 1) && squash(prev(code, d - 1).name) === k ? 5 : 0)
+          // keep the few people who may work this weekend free for it
+          + (lastWk.size && !lastWk.has(code) && sl.chain && (isWkend(w.days[d + 1]) || isWkend(w.days[d + 2])) ? 15 : 0)
+          + (lastWk.size && !lastWk.has(code) && !isWkend(day) ? 2 : 0)
+          + mine.indexOf(code) * 0.001; };
+      const code = cands.sort((a, b) => score(a) - score(b))[0];
+      setMine(w, code, d, sl.c.id); placed++;
+      if (sl.chain){ const todo = ruleCheck(w).misses.filter(x => x.code === code && x.from === d); applyRule(w, todo); placed += todo.filter(x => x.kind === 'assign').length; }
+    }
+  });
+  return { placed, open, weeks: H.weeks };
+}
+function clearPlan(w){
+  w.undo = JSON.stringify({ cells: w.cells, leaveReq: w.leaveReq || [], auto: w.auto || [] });
+  const m = staffMap();
+  Object.keys(w.cells).forEach(k => { const v = w.cells[k]; v.staff = (v.staff || []).filter(x => !isMine(x, m)); if (!v.label && !v.staff.length && !v.note) delete w.cells[k]; });
+  w.leaveReq = (w.leaveReq || []).filter(r => !r.auto); w.auto = [];
+}
+
 function setMine(w, code, d, colId){
   for (const [k, v] of Object.entries(w.cells)){
     const [dd] = k.split('|'); if (+dd !== d) continue;
@@ -1484,6 +1595,13 @@ $('#main').addEventListener('change', e => {
 });
 $('#main').addEventListener('click', e => {
   if (e.target.id === 'savePlan'){ save(); go('review'); }
+  if (view === 'plan' && ['genRun', 'genClear', 'genUndo'].includes(e.target.id)){
+    const w = week();
+    if (e.target.id === 'genUndo'){ const u = JSON.parse(w.undo); Object.assign(w, u); delete w.undo; save(); render(); flash('Undone'); return; }
+    if (e.target.id === 'genClear'){ clearPlan(w); save(); render(); flash('Plan cleared (your leave requests are kept)'); return; }
+    const r = generateSchedule(w); save(); render();
+    toast(`Placed <b>${r.placed}</b> duties${r.weeks ? ` (using ${r.weeks} past week${r.weeks > 1 ? 's' : ''} for fairness)` : ''}.` + (r.open.length ? ` <b>${r.open.length}</b> slot${r.open.length > 1 ? 's' : ''} left without a 1st year: not enough free residents.` : ' Every slot is filled.') + ' Check it, change anything by hand, or press Undo.', [['OK', null]]);
+  }
   if (e.target.id === 'applyRule' && view === 'plan'){ const w = week(); applyRule(w, ruleCheck(w).misses); save(); render(); }
 });
 

@@ -266,6 +266,7 @@ dialog::backdrop{background:rgba(20,25,35,.35)}
       <button id="btnNew">New blank week</button>
       <button data-more="dup">Duplicate this week</button>
       <button data-more="del" class="danger">Delete this week</button>
+      <button data-more="wipe" class="danger">Start fresh (delete all data)</button>
     </div>
   </div>
   <input type="file" id="fileIn" accept=".json,.docx,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
@@ -916,6 +917,12 @@ document.querySelectorAll('[data-more]').forEach(b => b.onclick = () => {
   if (b.dataset.more === 'settings') return openSettings();
   if (b.dataset.more === 'edit') return go('edit');
   if (b.dataset.more === 'month') return go('month');
+  if (b.dataset.more === 'wipe'){
+    if (!confirm('Delete ALL weeks, staff and settings on this device and start fresh?\n\nThis cannot be undone. Download a backup first if you might need it.')) return;
+    try { localStorage.removeItem(KEY); } catch(e){}
+    const req = indexedDB.deleteDatabase('routine-maker'); req.onsuccess = req.onerror = req.onblocked = () => location.reload();
+    return;
+  }
   if (b.dataset.more === 'dup'){ const c = JSON.parse(JSON.stringify(w)); c.id = uid(); idb.get(w.id).then(f => f && idb.put(c.id, f)).catch(() => {}); c.created = Date.now(); c.range = (c.range || '') + ' (copy)'; state.weeks.push(c); state.current = c.id; }
   if (b.dataset.more === 'del'){ if (!confirm(`Delete the week "${weekLabel(w)}"? This cannot be undone (download a backup first if unsure).`)) return;
     state.weeks = state.weeks.filter(x => x !== w); idb.del(w.id).catch(() => {}); sortWeeks(); state.current = state.weeks[0] ? state.weeks[0].id : null; view = 'home'; }
@@ -1519,8 +1526,14 @@ function generateSchedule(w){
   w.undo = JSON.stringify({ cells: w.cells, leaveReq: w.leaveReq || [], auto: w.auto || [] });
   const H = pastStats(w), rate = fillRates(), lastWk = lastWeekend(w, m), every = everyCols();
   const neuroC = colFor(w, CHAIN[0].from);
-  const chainOf = col => CHAIN.find(r => colFor(w, r.from) === col) || null;
   const busy = (code, d) => Object.entries(w.cells).some(([k, v]) => +k.split('|')[0] === d && (v.staff || []).includes(code));
+  // weekend team: about half the residents work FRI–SUN this week, the rest stay off so they're free next weekend
+  const size = Math.ceil(mine.length / 2);
+  const team = new Set(mine.filter(c => !lastWk.has(c)).sort((a, b) => (H.get(a).wk - H.get(b).wk) || (H.get(a).duties - H.get(b).duties) || (mine.indexOf(a) - mine.indexOf(b))).slice(0, size));
+  // anyone already working this weekend (picked by hand) is on the team too
+  w.days.forEach((day, d) => { if (isWkend(day)) mine.forEach(c => { if (busy(c, d)) team.add(c); }); });
+  const offWk = c => lastWk.has(c) || !team.has(c);
+  const chainOf = col => CHAIN.find(r => colFor(w, r.from) === col) || null;
   const weekDuties = code => Object.values(w.cells).reduce((n, v) => n + ((v.staff || []).includes(code) ? 1 : 0), 0);
   const colAt = (code, d) => { for (const c of w.columns) if (((w.cells[cellKey(d, c.id)] || {}).staff || []).includes(code)) return c; return null; };
   let placed = 0; const open = [];
@@ -1536,12 +1549,12 @@ function generateSchedule(w){
     for (const sl of slots){
       const cands = mine.filter(code => {
         if (onLeave(code, d) || busy(code, d)) return false;
-        if (lastWk.has(code) && isWkend(day)) return false;
+        if (offWk(code) && isWkend(day)) return false;
         if (sl.chain){
           if (!w.days[d + 2]) return false;                                  // chain would spill into next week
           if (neuroC && sl.c === neuroC && neuroDays(w, code).length) return false;
           if (onLeave(code, d + 1) || busy(code, d + 1) || busy(code, d + 2)) return false;
-          if (lastWk.has(code) && isWkend(w.days[d + 1])) return false;
+          if (offWk(code) && isWkend(w.days[d + 1])) return false;
         }
         return !blockReason(w, code, d, sl.c.id, lastWk);
       });
@@ -1554,15 +1567,15 @@ function generateSchedule(w){
           + 2 * (h.col.get(k) || 0) + 4 * (h.lastCol.get(k) || 0)
           + (prev && prev(code, d - 1) && squash(prev(code, d - 1).name) === k ? 5 : 0)
           // keep the few people who may work this weekend free for it
-          + (lastWk.size && !lastWk.has(code) && sl.chain && (isWkend(w.days[d + 1]) || isWkend(w.days[d + 2])) ? 15 : 0)
-          + (lastWk.size && !lastWk.has(code) && !isWkend(day) ? 2 : 0)
+          + (!offWk(code) && sl.chain && isWkend(w.days[d + 2]) ? 15 : 0)   // a chain's day off would cost the weekend a team member
+          + (!offWk(code) && !isWkend(day) ? 2 : 0)
           + mine.indexOf(code) * 0.001; };
       const code = cands.sort((a, b) => score(a) - score(b))[0];
       setMine(w, code, d, sl.c.id); placed++;
       if (sl.chain){ const todo = ruleCheck(w).misses.filter(x => x.code === code && x.from === d); applyRule(w, todo); placed += todo.filter(x => x.kind === 'assign').length; }
     }
   });
-  return { placed, open, weeks: H.weeks };
+  return { placed, open, weeks: H.weeks, team: [...team] };
 }
 function clearPlan(w){
   w.undo = JSON.stringify({ cells: w.cells, leaveReq: w.leaveReq || [], auto: w.auto || [] });
@@ -1600,7 +1613,7 @@ $('#main').addEventListener('click', e => {
     if (e.target.id === 'genUndo'){ const u = JSON.parse(w.undo); Object.assign(w, u); delete w.undo; save(); render(); flash('Undone'); return; }
     if (e.target.id === 'genClear'){ clearPlan(w); save(); render(); flash('Plan cleared (your leave requests are kept)'); return; }
     const r = generateSchedule(w); save(); render();
-    toast(`Placed <b>${r.placed}</b> duties${r.weeks ? ` (using ${r.weeks} past week${r.weeks > 1 ? 's' : ''} for fairness)` : ''}.` + (r.open.length ? ` <b>${r.open.length}</b> slot${r.open.length > 1 ? 's' : ''} left without a 1st year: not enough free residents.` : ' Every slot is filled.') + ' Check it, change anything by hand, or press Undo.', [['OK', null]]);
+    toast(`Placed <b>${r.placed}</b> duties${r.weeks ? ` (using ${r.weeks} past week${r.weeks > 1 ? 's' : ''} for fairness)` : ''}.` + (r.open.length ? ` <b>${r.open.length}</b> slot${r.open.length > 1 ? 's' : ''} left without a 1st year: not enough free residents.` : ' Every slot is filled.') + (r.team && r.team.length ? ` Weekend team: <b>${esc(r.team.join(', '))}</b>.` : '') + ' Check it, change anything by hand, or press Undo.', [['OK', null]]);
   }
   if (e.target.id === 'applyRule' && view === 'plan'){ const w = week(); applyRule(w, ruleCheck(w).misses); save(); render(); }
 });

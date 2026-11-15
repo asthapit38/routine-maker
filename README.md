@@ -38,8 +38,12 @@ In the planner, **✨ Generate schedule** fills the week for you:
   - weekend days go to whoever has worked the fewest;
   - stations rotate (it avoids last week's station and yesterday's station);
   - people who are allowed to work this weekend are kept free for it.
+- **Weekend team:** about half the residents (6 of 11) work Friday to Sunday this week; the rest are kept off so they're free next weekend. The teams alternate week by week (whoever worked last weekend is never on the team). The team is shown after generating.
+- **No past data needed:** on a fresh month, week 1 is generated without history; each later week learns from the weeks before it.
 - It keeps anything you've already placed. **Clear plan** starts fresh; **Undo** reverts the last generate or clear.
 - If there aren't enough free residents, the leftover cases stay empty and are listed in the bottom row.
+
+**Start fresh:** **⋯ → Start fresh (delete all data)** wipes every week, the staff list and settings on this device. Use it to clear test data before the real first week, and download a backup first if you might need it.
 
 ## Rules and validations (summary)
 

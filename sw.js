@@ -1,17 +1,11 @@
 /* Duty Roster service worker: offline app shell.
-   Bump VERSION whenever you deploy changed files so clients pick them up. */
-const VERSION = 'v13';
-const CACHE = 'roster-' + VERSION;
+   This file is a template: `npm run build` (scripts/build-sw.mjs) writes out/sw.js
+   with CACHE set from a hash of the exported files and SHELL listing all of them. */
+const CACHE = 'roster-dev';
 const SHELL = [
-  './',
-  'index.html',
-  'manifest.webmanifest',
-  'icons/icon.svg',
-  'icons/icon-192.png',
-  'icons/icon-512.png',
-  'icons/maskable-512.png',
-  'icons/apple-touch-icon.png',
-  'icons/favicon-32.png'
+  '/',
+  '/index.html',
+  '/manifest.webmanifest'
 ];
 
 self.addEventListener('install', e => {

@@ -1,8 +1,8 @@
 # Duty Roster (routine-maker)
 
-A super lightweight, single-file web app for building a department's **weekly duty roster** (OT / station × day grid).
+A lightweight web app for building a department's **weekly duty roster** (OT / station × day grid).
 
-- **No install, no server, no dependencies.** Open `index.html` in a browser, or host it on any static host (GitHub Pages works).
+- **No server.** It's a Next.js app exported as a static site (`npm run build` → `out/`), hosted on Vercel or Netlify. Everything runs in the browser and it works offline.
 - **Data lives in the browser's `localStorage`.** Download a backup now and then, because clearing browser data erases it.
 
 ## Workflow
@@ -101,16 +101,18 @@ After the first visit it works **fully offline**. Rosters are kept on the device
 
 ## Deploy (free)
 
-The app is plain static files with no build step: `index.html`, `sw.js`, `manifest.webmanifest`, `icons/`.
+The app is a Next.js project with `output: 'export'`: `npm run build` writes a static site to `out/` (the page, `/_next/static/` assets, `legacy.js`, `sw.js`, `manifest.webmanifest`, `icons/`).
 
-- **Vercel:** *Add New → Project* → import this GitHub repo → Framework preset **Other**, no build command, output directory `.` → Deploy. `vercel.json` sets the cache headers.
-- **Netlify:** *Add new site → Import from Git* → pick the repo. The build settings come from `netlify.toml` (publish `.`). Or drag-and-drop the folder onto app.netlify.com/drop.
-- **GitHub Pages:** *Settings → Pages* → deploy from branch, folder `/ (root)`. All paths are relative, so a sub-path like `/routine-maker/` works.
-- **Cloudflare Pages** (or any static host) works the same way.
+- **Vercel:** *Add New → Project* → import this GitHub repo → Deploy. `vercel.json` sets the build command `npm run build`, the output directory `out` and the cache headers.
+- **Netlify:** *Add new site → Import from Git* → pick the repo. The build settings come from `netlify.toml` (command `npm run build`, publish `out`).
+- The site must be served from the root of a domain (`/`). GitHub Pages sub-path hosting (like `/routine-maker/`) is no longer supported.
 
-**When you change files**, bump `VERSION` in `sw.js` (e.g. `v1` → `v2`). Users then see a *"A new version is available — Reload"* prompt.
+**Updates are automatic.** The build generates `out/sw.js` from the root `sw.js` template: it precaches every file the page needs, and its cache name (`roster-v14-<hash>`) is a hash of those files. Any change gives a new service worker, and users see a *"A new version is available — Reload"* prompt. There is no version to bump by hand.
 
-Run locally: `python3 -m http.server` and open http://localhost:8000. The service worker needs `http(s)://`, so opening the file directly works but stays online-only.
+Run locally:
+
+- `npm ci` once, then `npm run dev` and open http://localhost:3000. The dev server has no service worker (`/sw.js` is a 404 there, so the app stays online-only).
+- To test offline and updates: `npm run build`, then serve `out/` (`python3 -m http.server -d out 8000` or `npx serve out`) and open http://localhost:8000.
 
 ## Software factory
 
@@ -126,9 +128,16 @@ read `.gitignore` sees those copies too; exclude `.worktrees/` in its config.
 
 ### Agent notes
 
-- Set up a fresh checkout: nothing to install (no dependencies, no env files).
-- Run the app: `python3 -m http.server <port>` from the repo root, then open
-  `http://localhost:<port>/index.html`.
+- Set up a fresh checkout: `npm ci` (no env files).
+- Run the app: `npm run dev -- -p <port>`, then open `http://localhost:<port>/`.
+  For the service worker, `npm run build` and serve `out/`
+  (`python3 -m http.server -d out <port>`).
+- The root `index.html` is still the source of the app's markup, styles and
+  script until they are ported to components. `app/` serves its `<style>` and
+  body markup, and `scripts/prepare-public.mjs` copies its inline script to
+  `public/legacy.js`, with the manifest and icons. `public/` and `out/` are
+  generated; don't edit them.
 - Validation: `bash factory/checks.sh` (inline-script and `sw.js` syntax via
-  `node --check`, plus JSON validity of the manifest and `vercel.json`). Needs
-  `node` and Python 3.10+ on `PATH`.
+  `node --check`, plus JSON validity of the manifest and `vercel.json`; needs
+  `node` and Python 3.10+ on `PATH`), plus
+  `npm run lint && npm run typecheck && npm run build`.

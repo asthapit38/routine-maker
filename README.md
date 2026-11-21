@@ -111,3 +111,24 @@ The app is plain static files with no build step: `index.html`, `sw.js`, `manife
 **When you change files**, bump `VERSION` in `sw.js` (e.g. `v1` → `v2`). Users then see a *"A new version is available — Reload"* prompt.
 
 Run locally: `python3 -m http.server` and open http://localhost:8000. The service worker needs `http(s)://`, so opening the file directly works but stays online-only.
+
+## Software factory
+
+`/factory run` builds every open GitHub issue labeled `factory` through
+intake → spec → build → gate → review → approve, one PR per issue. State is in
+`factory/jobs/` (gitignored); `factory/bin/job` is its only writer. Checks:
+`factory/checks.sh`. Dashboard: `cd factory && python3 -m http.server`, then
+open http://localhost:8000/dashboard.html.
+
+Each job works in its own git worktree, a full checkout of the repo at
+`.worktrees/<job-id>` (gitignored). A tool run from the repo root that doesn't
+read `.gitignore` sees those copies too; exclude `.worktrees/` in its config.
+
+### Agent notes
+
+- Set up a fresh checkout: nothing to install (no dependencies, no env files).
+- Run the app: `python3 -m http.server <port>` from the repo root, then open
+  `http://localhost:<port>/index.html`.
+- Validation: `bash factory/checks.sh` (inline-script and `sw.js` syntax via
+  `node --check`, plus JSON validity of the manifest and `vercel.json`). Needs
+  `node` and Python 3.10+ on `PATH`.

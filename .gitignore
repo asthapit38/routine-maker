@@ -1,2 +1,8 @@
 /factory/jobs/
 /.worktrees/
+/node_modules/
+/.next/
+/out/
+/public/
+/next-env.d.ts
+*.tsbuildinfo
